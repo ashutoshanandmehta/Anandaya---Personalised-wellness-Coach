@@ -11,6 +11,7 @@ import {
 } from './reminderToolService.js';
 import {
   resolveTimeZone,
+  nextLocalTimeUtc,
   localDateTimeToUtcIso,
   formatInTimeZone,
 } from './timeService.js';
@@ -85,11 +86,16 @@ export async function orchestrateToolAction({
     timeZone,
   });
 
-  let action = normalizeAction(planner.action);
-  action = mergePendingToolAction(action, pendingFollowupOffer);
+  let actions = [];
+  if (Array.isArray(planner.actions)) {
+    actions = planner.actions.map(a => normalizeAction(a)).filter(Boolean);
+  } else if (planner.action) {
+    actions = [normalizeAction(planner.action)].filter(Boolean);
+  }
   let source = planner.source || 'llm_planner';
 
-  if (!action || action.action === 'respond') {
+  // Fallback if no actions or first action is respond
+  if (actions.length === 0 || actions[0].action === 'respond') {
     const fallback = classifyFallback({
       message,
       pendingFollowupOffer,
@@ -99,90 +105,118 @@ export async function orchestrateToolAction({
       await auditToolAction(db, {
         userId,
         profileId,
-        action: action?.action || 'respond',
+        action: 'respond',
         validation: { success: true, handled: false },
-        normalizedParams: action || {},
+        normalizedParams: {},
         toolResult: { handled: false },
       });
       return { handled: false };
     }
-    action = fallback;
-    action = mergePendingToolAction(action, pendingFollowupOffer);
+    let fallbackAction = mergePendingToolAction(fallback, pendingFollowupOffer);
+    actions = [fallbackAction];
     source = 'deterministic_fallback';
+  } else {
+    // Merge pending offer into the first action if applicable
+    actions[0] = mergePendingToolAction(actions[0], pendingFollowupOffer);
   }
 
-  if (action.action === 'ask_clarification') {
-    const reply = action.clarificationQuestion || buildMissingFieldsReply(action, profile);
+  // Check for clarification in any action
+  const clarificationAction = actions.find(a => a.action === 'ask_clarification');
+  if (clarificationAction) {
+    const reply = clarificationAction.clarificationQuestion || buildMissingFieldsReply(clarificationAction, profile);
     await auditToolAction(db, {
       userId,
       profileId,
-      action: action.action,
-      validation: { success: true, missingFields: action.missingFields || [] },
-      normalizedParams: action,
+      action: clarificationAction.action,
+      validation: { success: true, missingFields: clarificationAction.missingFields || [] },
+      normalizedParams: clarificationAction,
       toolResult: { success: false, needsClarification: true },
     });
     return {
       handled: true,
       mode: 'tool_clarification',
       reply,
-      extra: { pendingToolAction: sanitizeForClient(action) },
+      extra: { pendingToolAction: sanitizeForClient(clarificationAction) },
     };
   }
 
-  const validation = validateAction(action);
-  if (!validation.success) {
-    const reply = validation.reply || buildMissingFieldsReply(action, profile);
+  // Validate all actions
+  for (const action of actions) {
+    const validation = validateAction(action);
+    if (!validation.success) {
+      const reply = validation.reply || buildMissingFieldsReply(action, profile);
+      await auditToolAction(db, {
+        userId,
+        profileId,
+        action: action.action,
+        validation,
+        normalizedParams: action,
+        toolResult: { success: false, needsClarification: true },
+      });
+      return {
+        handled: true,
+        mode: 'tool_validation_clarification',
+        reply,
+        extra: { pendingToolAction: sanitizeForClient(action) },
+      };
+    }
+  }
+
+  // Execute all actions
+  const executionResults = [];
+  let finalMode = 'tool_executed';
+  let finalExtra = {};
+
+  for (const action of actions) {
+    const toolResult = await executeToolAction({
+      db,
+      userId,
+      profileId,
+      profile,
+      action,
+      source,
+      message,
+      conversationId,
+      timeZone,
+    });
+
     await auditToolAction(db, {
       userId,
       profileId,
       action: action.action,
-      validation,
+      validation: { success: true },
       normalizedParams: action,
-      toolResult: { success: false, needsClarification: true },
+      toolResult,
     });
-    return {
-      handled: true,
-      mode: 'tool_validation_clarification',
-      reply,
-      extra: { pendingToolAction: sanitizeForClient(action) },
-    };
+
+    if (toolResult.handled) {
+      executionResults.push({ action, toolResult });
+      if (toolResult.mode) finalMode = toolResult.mode;
+      finalExtra = mergeToolExtras(finalExtra, toolResult.extra);
+    }
   }
 
-  const toolResult = await executeToolAction({
-    db,
-    userId,
-    profileId,
-    profile,
-    action,
-    source,
-    message,
-    conversationId,
-    timeZone,
-  });
+  if (executionResults.length === 0) return { handled: false };
 
-  await auditToolAction(db, {
-    userId,
-    profileId,
-    action: action.action,
-    validation,
-    normalizedParams: action,
-    toolResult,
-  });
-
-  if (!toolResult.handled) return { handled: false };
-
-  const reply = await buildFinalToolReply({
-    action,
-    toolResult,
-    profile,
-    timeZone,
-  });
+  // Build replies
+  let finalReply = '';
+  for (const { action, toolResult } of executionResults) {
+    const replyPart = await buildFinalToolReply({
+      action,
+      toolResult,
+      profile,
+      timeZone,
+    });
+    if (replyPart) {
+      finalReply += finalReply ? `\n\n${replyPart}` : replyPart;
+    }
+  }
 
   return {
     handled: true,
-    mode: toolResult.mode || `tool_${action.action}`,
-    reply,
-    extra: toolResult.extra || {},
+    mode: finalMode,
+    reply: finalReply,
+    extra: finalExtra,
   };
 }
 
@@ -211,8 +245,10 @@ Return exactly one JSON object. Do not write user-facing prose unless action is 
 Your job:
 - Decide whether the user wants a reminder/check-in tool action, status lookup, update, cancel, or ordinary chat.
 - Use profile context, recent chat, active reminders, timezone, and current local date/time.
-- If the user wants ordinary coaching or health conversation, return {"action":"respond"} so the main wellness engine can answer.
-- If a tool action is missing required fields, return {"action":"ask_clarification", "missingFields":[...], "clarificationQuestion":"..."}.
+- If the user wants ordinary coaching or health conversation, return {"actions": [{"action":"respond"}]} so the main wellness engine can answer.
+- If a tool action is missing required fields, return {"actions": [{"action":"ask_clarification", "missingFields":[...], "clarificationQuestion":"..."}]}.
+- If the user says "yes", "go ahead", or agrees to a schedule/plan previously proposed by the assistant in the recent chat history, READ the assistant's previous message and extract ALL the agreed-upon reminders or check-ins into multiple "create_reminder" or "create_checkin" actions.
+- You may return multiple actions if the plan requires multiple times (e.g., Morning, Evening, Night).
 - If the user asks to "check", "check in", "ask later how X is", or follow up on a symptom/habit/state, prefer create_checkin, not create_reminder.
 - Use create_reminder for action nudges ("do/take/drink/cook/start this at time"). Use create_checkin for progress/status questions ("how is stomach", "did sleep improve", "ask whether it happened").
 - Never pretend a side effect happened. You only plan; backend executes.
@@ -223,30 +259,34 @@ respond, ask_clarification, create_reminder, update_reminder, cancel_reminder, l
 
 Output schema:
 {
-  "action": "one allowed action",
-  "kind": "reminder|checkin|null",
-  "title": "short task/reminder title or null",
-  "timeSpec": {
-    "type": "absolute|relative|fuzzy|recurring",
-    "absolute": "YYYY-MM-DD HH:mm or null",
-    "relative": {"amount": number, "unit": "minutes|hours|days"} or null,
-    "fuzzy": "morning|evening|night|bedtime|lunch or null",
-    "recurring": {
-      "frequency": "daily|weekly|monthly|yearly",
-      "interval": 1,
-      "daysOfWeek": ["Monday", "Wednesday"],
-      "timeOfDay": "09:00"
+  "actions": [
+    {
+      "action": "one allowed action",
+      "kind": "reminder|checkin|null",
+      "title": "short task/reminder title or null",
+      "timeSpec": {
+        "type": "absolute|relative|fuzzy|recurring",
+        "absolute": "YYYY-MM-DD HH:mm or null",
+        "relative": {"amount": number, "unit": "minutes|hours|days"} or null,
+        "fuzzy": "morning|evening|night|bedtime|lunch or null",
+        "recurring": {
+          "frequency": "daily|weekly|monthly|yearly",
+          "interval": 1,
+          "daysOfWeek": ["Monday", "Wednesday"],
+          "timeOfDay": "09:00"
+        }
+      },
+      "timezone": "${timeZone}",
+      "targetId": "existing reminder id if unambiguous or null",
+      "targetDescription": "text target if any or null",
+      "update": {"title": string|null, "timeSpec": object|null, "oldText": string|null, "newText": string|null},
+      "confirmationNeeded": boolean,
+      "missingFields": [],
+      "clarificationQuestion": string|null,
+      "medicationContext": {"involvesMedication": boolean, "dosageChange": boolean, "clinicianConfirmed": boolean, "needsClinicianConfirmation": boolean},
+      "reason": "brief internal reason"
     }
-  },
-  "timezone": "${timeZone}",
-  "targetId": "existing reminder id if unambiguous or null",
-  "targetDescription": "text target if any or null",
-  "update": {"title": string|null, "timeSpec": object|null, "oldText": string|null, "newText": string|null},
-  "confirmationNeeded": boolean,
-  "missingFields": [],
-  "clarificationQuestion": string|null,
-  "medicationContext": {"involvesMedication": boolean, "dosageChange": boolean, "clinicianConfirmed": boolean, "needsClinicianConfirmation": boolean},
-  "reason": "brief internal reason"
+  ]
 }
 
 Timing rules:
@@ -878,6 +918,17 @@ function clarificationResult(action, reply) {
     reply,
     action,
   };
+}
+
+function mergeToolExtras(current = {}, next = {}) {
+  const merged = { ...current, ...(next || {}) };
+  if (current.scheduledCheckins || next?.scheduledCheckins) {
+    merged.scheduledCheckins = [
+      ...(current.scheduledCheckins || []),
+      ...(next?.scheduledCheckins || []),
+    ];
+  }
+  return merged;
 }
 
 function buildReplacementTitle(update = {}) {
