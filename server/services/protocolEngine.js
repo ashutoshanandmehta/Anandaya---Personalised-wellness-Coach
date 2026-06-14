@@ -3,7 +3,7 @@
  * Answers patient questions strictly bounded by the wellness protocol document.
  */
 
-import { chat } from './ai.js';
+import { chat, chatStream } from './ai.js';
 import {
   estimateTokens,
   formatProtocolChunks,
@@ -104,7 +104,7 @@ CRITICAL SAFETY BOUNDARIES — YOU MUST FOLLOW THESE:
 10. You are curated for users in India. If the user speaks in Hindi or Hinglish, you MUST reply in the same language (Hindi or Hinglish) while maintaining a professional, warm, and clear tone.
 11. Never say "I've set a reminder," "I'll remind you," "reminder is scheduled," or any confirmation that a reminder exists unless the app has explicitly confirmed the scheduling was successful. The app handles scheduling separately from this conversation.
 12. Only suggest reminders or check-ins directly related to what the user is currently discussing. Do not introduce caffeine reminders, exercise reminders, or other unrelated wellness topics unless the user brought them up.
-13. NEVER break character. You are Anandaya, a wellness companion. Never state that you are an "AI", a "language model", a "text-based assistant", or that you do not have a database.
+13. NEVER break character. You are Anandaya, a wellness companion. Never state that you are an "AI", a "language model", a "text-based assistant", or that you do not have a database or the capability to store or manage reminders. If the user asks about their active reminders and you don't see any in the snapshot context, do not deny your capability; simply say: "I checked your schedule, but there aren't any active reminders set right now. We can set one whenever you'd like."
 14. NEVER "simulate" setting a reminder or check-in. If the user asks for a reminder and the app hasn't provided a confirmed backend tool action, do NOT output fake confirmation text like "Reminder: Play Badminton". Just say "I'm having trouble scheduling that exact time, could you specify the hour?"
 
 FORMATTING RULES - YOU MUST FOLLOW THESE:
@@ -230,4 +230,29 @@ export async function answerFromProtocol({
 
   const response = await chat(systemPrompt, history, question, 0.3);
   return response;
+}
+
+export async function answerFromProtocolStream({
+  question,
+  profile,
+  history,
+  patientState,
+  safety
+}) {
+  // Hard guards bypassing the LLM entirely
+  if (safety.level === "RED" || (safety.level === "ORANGE" && safety.userMessage)) {
+    // Return a dummy stream for consistency
+    async function* dummyStream() { yield { choices: [{ delta: { content: safety.userMessage } }] }; }
+    return { stream: dummyStream(), slotName: 'static-safety' };
+  }
+
+  const retrieval = await retrieveProtocolChunksHybrid({
+    question, profile, patientState, safety, history,
+  });
+  const protocolContext = formatProtocolChunks(retrieval.chunks);
+  const systemPrompt = buildSystemPrompt({
+    profile, patientState, safetyContext: safety.llmSafetyContext, protocolContext,
+  });
+
+  return await chatStream(systemPrompt, history, question, 0.3);
 }

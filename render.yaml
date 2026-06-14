@@ -2,7 +2,7 @@ services:
   - type: web
     name: health-coach-ai
     env: node
-    buildCommand: npm install && npm run build
+    buildCommand: npm ci --include=dev && npm run build
     startCommand: npm start
     plan: free
     region: ohio

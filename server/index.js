@@ -22,6 +22,7 @@ import locationRoutes from './routes/location.js';
 import scheduledCheckinRoutes from './routes/scheduledCheckins.js';
 import { getAIProviderSummary } from './services/ai.js';
 import { startReminderScheduler } from './services/reminderScheduler.js';
+import { processJobs } from './services/jobQueue.js';
 
 const __filename = fileURLToPath(import.meta.url);
 const __dirname = dirname(__filename);
@@ -88,6 +89,9 @@ async function startServer() {
     await getDb(); // Initialize SQLite schema
     console.log('[DB] SQLite Database initialized');
     startReminderScheduler();
+    
+    // Start background job queue processor
+    processJobs().catch(e => console.error('[JobQueue] Error starting processJobs:', e));
 
     app.listen(PORT, () => {
       const aiSummary = getAIProviderSummary();

@@ -102,8 +102,8 @@ const REMINDER_FAILURE_PATTERNS = [
 
 const REMINDER_STATUS_PATTERNS = [
   /\b(?:is|are)\s+there\s+any\s+(?:active\s+)?(?:reminders?|check-?ins?|notifications?)\s+(?:set|scheduled|active)?\b/i,
-  /\b(?:what|which|show|list|tell\s+me)\s+(?:are\s+)?(?:my\s+|the\s+|active\s+)?(?:reminders?|check-?ins?|notifications?|schedule)\b/i,
-  /\b(?:do\s+i\s+have|have\s+we\s+set)\s+any\s+(?:reminders?|check-?ins?|notifications?)\b/i,
+  /\b(?:what|which|show|list|tell\s+me|check|see)\s+(?:are\s+)?(?:my\s+|the\s+|active\s+)?(?:reminders?|check-?ins?|notifications?|schedule)\b/i,
+  /\b(?:do\s+i\s+have|have\s+we\s+set|check\s+if\s+i\s+have|check\s+for\s+any)\s+(?:any\s+)?(?:reminders?|check-?ins?|notifications?)\b/i,
   /\b(?:did\s+you|have\s+you)\s+(?:set|schedule|scheduled)\s+(?:the\s+|a\s+|any\s+)?(?:reminder|check-?in|notification)\b/i,
   /\b(?:reminders?|check-?ins?|notifications?)\s+(?:set|scheduled|active|pending)\s*\??\s*$/i,
   /\bwhat(?:'|')?s\s+(?:on\s+)?(?:my\s+|the\s+)?schedule\b/i,

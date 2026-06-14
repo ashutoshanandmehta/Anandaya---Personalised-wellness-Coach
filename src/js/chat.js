@@ -388,6 +388,7 @@ async function sendMessage() {
 async function submitMessage(text, { resetInput = false } = {}) {
   const chatInput = document.getElementById('chatInput');
   const typingIndicator = document.getElementById('typingIndicator');
+  const chatMessages = document.getElementById('chatMessages');
 
   appendMessage('user', text);
   if (resetInput && chatInput) {
@@ -396,33 +397,114 @@ async function submitMessage(text, { resetInput = false } = {}) {
     document.getElementById('sendBtn').classList.remove('active');
   }
 
-  typingIndicator.style.display = 'flex';
-  scrollToBottom();
   showAutosave('saving');
 
+  // Create assistant bubble immediately
+  const div = document.createElement('div');
+  div.className = 'message assistant';
+  div.innerHTML = `
+    <div class="message-avatar">
+      <img src="/brand/anand-icon.png" alt="Anandaya">
+    </div>
+    <div class="message-stack">
+      <div class="message-content" id="streamingContent-${Date.now()}">
+        <span class="typing-dots"><span>.</span><span>.</span><span>.</span></span>
+      </div>
+      <div class="message-meta">${formatMessageTime()}</div>
+    </div>`;
+  chatMessages.appendChild(div);
+  scrollToBottom();
+
+  const contentContainer = div.querySelector('.message-content');
+  
   try {
-    const res = await apiClient.post(`/api/profiles/${appState.activeProfileId}/chat`, { message: text });
-    typingIndicator.style.display = 'none';
+    const token = localStorage.getItem('token');
+    const response = await fetch(`/api/profiles/${appState.activeProfileId}/chat`, {
+      method: 'POST',
+      headers: {
+        'Content-Type': 'application/json',
+        'Authorization': `Bearer ${token}`
+      },
+      body: JSON.stringify({ message: text })
+    });
+
+    if (!response.ok) throw new Error('Network response was not ok');
+
+    const reader = response.body.getReader();
+    const decoder = new TextDecoder();
+    let fullText = '';
+    let lastRenderTime = 0;
     
-    renderAssistantResponse(res);
-    if (res.scheduledCheckin || res.scheduledCheckins || ['checkin_scheduled', 'checkin_declined', 'schedule_confirmed'].includes(res.mode)) {
-      window.dispatchEvent(new CustomEvent('notifications:refresh'));
-    }
-    
-    // Dynamically update the right sidebar memory layer
-    try {
-      const updatedState = await apiClient.get(`/api/profiles/${appState.activeProfileId}/state`);
-      if (updatedState) {
-        appState.patientState = updatedState;
-        renderProfileData();
+    // Clear typing dots on first chunk
+    let firstTokenReceived = false;
+
+    while (true) {
+      const { value, done } = await reader.read();
+      if (done) break;
+      
+      const chunk = decoder.decode(value, { stream: true });
+      const events = chunk.split('\n\n');
+      
+      for (const event of events) {
+        if (!event.trim()) continue;
+        
+        if (event.startsWith('event: token')) {
+          if (!firstTokenReceived) {
+            contentContainer.innerHTML = '';
+            firstTokenReceived = true;
+          }
+          const dataLine = event.split('\n').find(l => l.startsWith('data: '));
+          if (dataLine) {
+            const data = JSON.parse(dataLine.replace('data: ', ''));
+            fullText += data.delta;
+            
+            // Throttle plain text render to 50ms
+            const now = Date.now();
+            if (now - lastRenderTime > 50) {
+              contentContainer.textContent = fullText;
+              scrollToBottom();
+              lastRenderTime = now;
+            }
+          }
+        } else if (event.startsWith('event: metadata')) {
+          const dataLine = event.split('\n').find(l => l.startsWith('data: '));
+          if (dataLine) {
+            const meta = JSON.parse(dataLine.replace('data: ', ''));
+            
+            // Re-use existing renderAssistantResponse but pass fullText
+            div.remove(); // Remove the streaming div
+            renderAssistantResponse({
+              reply: fullText,
+              assistantMessage: fullText,
+              ...meta
+            });
+            
+            if (meta.uiActions && meta.uiActions.some(a => a.type === 'show_checkin_offer')) {
+              window.dispatchEvent(new CustomEvent('notifications:refresh'));
+            }
+          }
+        } else if (event.startsWith('event: error')) {
+           const dataLine = event.split('\n').find(l => l.startsWith('data: '));
+           if (dataLine) {
+              const errData = JSON.parse(dataLine.replace('data: ', ''));
+              throw new Error(errData.message);
+           }
+        }
       }
-    } catch (e) {
-      console.warn('Failed to refresh patient state', e);
     }
+
+    // Refresh memory asynchronously
+    apiClient.get(`/api/profiles/${appState.activeProfileId}/state`)
+      .then(updatedState => {
+        if (updatedState) {
+          appState.patientState = updatedState;
+          renderProfileData();
+        }
+      }).catch(e => console.warn('Failed to refresh patient state', e));
 
     showAutosave('saved');
   } catch (err) {
-    typingIndicator.style.display = 'none';
+    div.remove();
     appendMessage('assistant', `*Something went wrong: ${err.message}*`);
     showAutosave('error');
   }

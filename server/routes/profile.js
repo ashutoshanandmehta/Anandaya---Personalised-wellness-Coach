@@ -6,7 +6,8 @@ import { requireProfileOwnership } from '../middleware/profileOwnershipMiddlewar
 import { extractProfileFromChat } from '../services/profileEngine.js';
 import { updateProfileContextSummary } from '../services/profileSummaryEngine.js';
 import { generateCheckIn } from '../services/checkinEngine.js';
-import { answerFromProtocol } from '../services/protocolEngine.js';
+import { answerFromProtocol, answerFromProtocolStream } from '../services/protocolEngine.js';
+import { enqueueJob } from '../services/jobQueue.js';
 import {
   routeSafety,
   shouldBypassLLM,
@@ -1216,187 +1217,107 @@ router.post('/:profileId/chat', requireProfileOwnership, async (req, res) => {
 
     // ── LLM PATH (GREEN / YELLOW) ─────────────────────────────────────────────
     const historyForExtraction = [...history, { role: 'user', content: message }];
-    const updatedProfile = await extractProfileFromChat(historyForExtraction, structuredProfile);
-
-    let newDay = stateRow?.current_day || 0;
-    if (newDay === 0 && updatedProfile.program_duration_days) {
-      newDay = 1;
-    }
-    updatedProfile.goals_confirmed = Boolean(
-      updatedProfile.goals?.length &&
-      (updatedProfile.program_duration_days || newDay >= 1 || structuredProfile.goals_confirmed)
-    );
-    const mergedUpdatedProfile = { ...profileRow, ...updatedProfile };
-
-    if (isBasicDetailsOnlyDay0({
-      message,
-      currentDay: stateRow?.current_day || 0,
-      previousProfile: structuredProfile,
-      updatedProfile,
-    })) {
-      const reply = buildBasicDetailsReply(profileRow);
-
-      await db.run(
-        `UPDATE patient_states
-         SET structured_profile_json = ?,
-             current_day = ?,
-             pending_followup_offer_json = NULL,
-             updated_at = CURRENT_TIMESTAMP
-         WHERE profile_id = ?`,
-        [JSON.stringify(updatedProfile), newDay, profileId]
-      );
-
-      await insertMessage(db, {
-        conversationId,
-        profileId,
-        role: 'assistant',
-        content: reply,
-        safetyLevel: safety.level,
-        safetyAction: 'BASIC_DETAILS_CAPTURED',
-        safetyDomain: safety.domain,
-      });
-
-      console.log('[CHAT SAFETY FLOW]', {
-        profileId,
-        safetyModeBefore: currentMode,
-        safetyLevel: safety.level,
-        safetyDomain: safety.domain,
-        selectedHandler: 'basic_details_shortcut',
-        llmCalled: false,
-      });
-
-      return res.json({
-        reply,
-        assistantMessage: reply,
-        mode: 'basic_details_captured',
-        safety,
-        ui: safety.ui || null,
-        uiActions: [],
-      });
-    }
+    
+    // We defer `extractProfileFromChat` and `updateProfileContextSummary` to the background.
+    // For this turn, we just use the previous structuredProfile for the prompt.
+    const stateForLLM = {
+      ...stateRow,
+      structured_profile_json: JSON.stringify(structuredProfile),
+      current_day: stateRow?.current_day || 0,
+      profile_summary_text: stateRow?.profile_summary_text || '',
+    };
 
     console.log('[CHAT SAFETY FLOW]', {
       profileId,
       safetyModeBefore: currentMode,
       safetyLevel: safety.level,
-      safetyDomain: safety.domain,
-      selectedHandler: 'llm',
-      llmCalled: true,
+      selectedHandler: 'llm_stream',
     });
 
-    const stateForSummary = {
-      ...stateRow,
-      structured_profile_json: JSON.stringify(updatedProfile),
-      current_day: newDay,
-    };
-    const shouldUpdateSummary = shouldRefreshProfileSummary({
-      previousProfile: structuredProfile,
-      updatedProfile,
-      stateRow,
-      safety,
-      pendingFollowupOffer,
-    });
-    const profileSummary = shouldUpdateSummary
-      ? await updateProfileContextSummary({
-          profile: profileRow,
-          structuredProfile: updatedProfile,
-          patientState: stateForSummary,
-          history,
-          latestUserMessage: message,
-          safety,
-        })
-      : (stateRow?.profile_summary_text || '');
+    // Send SSE Headers
+    res.setHeader('Content-Type', 'text/event-stream');
+    res.setHeader('Cache-Control', 'no-cache');
+    res.setHeader('Connection', 'keep-alive');
 
-    if (!shouldUpdateSummary) {
-      console.log('[Profile Summary] Reused existing compact summary; no profile/safety/pending-state change detected.');
-    }
-    const stateForLLM = {
-      ...stateForSummary,
-      profile_summary_text: profileSummary,
-    };
+    let fullReply = '';
+    let followupOffer = null;
 
-    const rawReply = await answerFromProtocol({
-      question: message,
-      profile: mergedUpdatedProfile,
-      history,
-      patientState: stateForLLM,
-      safety,
-    });
+    try {
+      // 1. Get the stream
+      const { stream, slotName } = await answerFromProtocolStream({
+        question: message,
+        profile: profileRow,
+        history,
+        patientState: stateForLLM,
+        safety,
+      });
 
-    const followupOffer = buildCheckinOffer({
-      message,
-      profile: mergedUpdatedProfile,
-      patientState: stateForLLM,
-      updatedProfile,
-      rawReply,
-      safety,
-    });
+      // 2. We can concurrently compute the check-in offer using the old profile
+      const offerPromise = buildCheckinOffer({
+        message,
+        profile: profileRow,
+        patientState: stateForLLM,
+        updatedProfile: structuredProfile, // Use existing profile for offer
+        rawReply: '', // Won't be available
+        safety,
+      }).catch(err => {
+        console.error('[CheckinOffer] Failed:', err);
+        return null;
+      });
 
-    const offerToSave = followupOffer || (keepPendingOffer ? pendingFollowupOffer : null);
+      // 3. Pump the stream
+      for await (const chunk of stream) {
+        const text = chunk.choices[0]?.delta?.content || '';
+        if (text) {
+          fullReply += text;
+          res.write(`event: token\ndata: ${JSON.stringify({ delta: text })}\n\n`);
+        }
+      }
 
-    await db.run(
-      `UPDATE patient_states
-       SET structured_profile_json = ?,
-           current_day = ?,
-           profile_summary_text = ?,
-           profile_summary_updated_at = CASE WHEN ? THEN CURRENT_TIMESTAMP ELSE profile_summary_updated_at END,
-           pending_followup_offer_json = ?,
-           last_safety_level = ?,
-           updated_at = CURRENT_TIMESTAMP
-       WHERE profile_id = ?`,
-      [
-        JSON.stringify(updatedProfile),
-        newDay,
-        profileSummary || null,
-        shouldUpdateSummary ? 1 : 0,
-        offerToSave ? JSON.stringify(offerToSave) : null,
-        safety.level,
-        profileId,
-      ]
-    );
+      followupOffer = await offerPromise;
 
-    // ── Phase 7: Post-Generation Safety Filter ─────────────────────────
-    const filterOptions = buildInteractionFilterOptions({
-      message,
-      currentDay: stateRow?.current_day || 0,
-      previousProfile: structuredProfile,
-      updatedProfile,
-      safety,
-      followupOffer: offerToSave,
-    });
-    
-    // Tell the filter we're in scheduling mode so it doesn't strip scheduling responses
-    if (keepPendingOffer) {
-      filterOptions.isInSchedulingFlow = true;
+      // 4. Send Metadata and end stream
+      const uiActions = followupOffer ? [{ type: 'show_checkin_offer', offer: followupOffer }] : [];
+      res.write(`event: metadata\ndata: ${JSON.stringify({ uiActions, mode: 'llm_answer', safety, slotName })}\n\n`);
+      res.write(`event: done\ndata: {}\n\n`);
+      res.end();
+
+    } catch (streamErr) {
+      console.error('[Chat] Stream error:', streamErr);
+      res.write(`event: error\ndata: ${JSON.stringify({ message: "Response interrupted. Please tap retry." })}\n\n`);
+      res.end();
+      return; // Do not save partial corrupted message
     }
 
-    const filterResult = applyPostGenerationFilter(
-      { reply: rawReply, assistantMessage: rawReply },
-      filterOptions
-    );
-    const reply = filterResult.reply;
-
-    if (filterResult._filter?.blocked) {
-      console.warn('[CHAT POST-FILTER] LLM output blocked. Violations:', filterResult._filter.violations);
-    }
-
+    // ── Background & Persistence Phase ─────────────────────────
     await insertMessage(db, {
       conversationId,
       profileId,
       role: 'assistant',
-      content: reply,
+      content: fullReply,
       safetyLevel: safety.level,
       safetyAction: safety.action,
       safetyDomain: safety.domain,
     });
 
-    return res.json({
-      reply,
-      assistantMessage: reply,
-      mode: 'llm_answer',
-      safety,
-      ui: safety.ui || null,
-      uiActions: followupOffer ? [{ type: 'show_checkin_offer', offer: followupOffer }] : [],
+    const offerToSave = followupOffer || (keepPendingOffer ? pendingFollowupOffer : null);
+    if (offerToSave) {
+      await db.run(
+        `UPDATE patient_states SET pending_followup_offer_json = ? WHERE profile_id = ?`,
+        [JSON.stringify(offerToSave), profileId]
+      );
+    }
+
+    // Enqueue the heavy extraction/summarization job
+    let newDay = stateRow?.current_day || 0;
+    if (newDay === 0 && structuredProfile.program_duration_days) newDay = 1;
+
+    await enqueueJob('update_profile_summary', {
+      profileId,
+      conversationId,
+      historyForExtraction,
+      oldStructuredProfile: structuredProfile,
+      newDay,
     });
 
   } catch (error) {
