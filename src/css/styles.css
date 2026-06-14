@@ -3257,7 +3257,7 @@ body:has(#mainAppLayout:not(.hidden)) {
 }
 
 .account-setup-card {
-  width: min(760px, 100%);
+  width: min(520px, 100%);
   background: var(--surface);
   border: 1px solid var(--border);
   border-radius: 18px;
@@ -3285,7 +3285,7 @@ body:has(#mainAppLayout:not(.hidden)) {
 
 .account-setup-heading h1 {
   color: #05081B;
-  font-size: clamp(2.25rem, 4vw, 3rem);
+  font-size: clamp(2rem, 3vw, 2.5rem);
   font-weight: 850;
   line-height: 1.05;
   margin-bottom: 12px;
@@ -3341,7 +3341,7 @@ body:has(#mainAppLayout:not(.hidden)) {
 
 .dashboard-heading h1 {
   color: #05081B;
-  font-size: clamp(2.75rem, 5vw, 4.8rem);
+  font-size: clamp(2rem, 3.5vw, 3rem);
   font-weight: 850;
   line-height: 1.05;
   letter-spacing: 0;
@@ -3350,13 +3350,13 @@ body:has(#mainAppLayout:not(.hidden)) {
 
 .dashboard-heading p {
   color: #68778E;
-  font-size: clamp(1.4rem, 2.4vw, 2.1rem);
+  font-size: clamp(1.2rem, 2vw, 1.5rem);
   font-weight: 500;
 }
 
 .dashboard-profiles-grid {
   display: grid;
-  grid-template-columns: repeat(auto-fill, minmax(188px, 220px));
+  grid-template-columns: repeat(auto-fill, minmax(140px, 160px));
   gap: 48px 58px;
   align-items: start;
 }
@@ -3386,7 +3386,7 @@ body:has(#mainAppLayout:not(.hidden)) {
 .dashboard-add-box {
   width: 100%;
   aspect-ratio: 1;
-  border-radius: 24px;
+  border-radius: 18px;
   display: flex;
   align-items: center;
   justify-content: center;
@@ -3395,7 +3395,7 @@ body:has(#mainAppLayout:not(.hidden)) {
 
 .dashboard-profile-avatar {
   color: #fff;
-  font-size: clamp(2.4rem, 4vw, 3.5rem);
+  font-size: clamp(1.8rem, 3vw, 2.4rem);
   font-weight: 850;
   box-shadow: 0 13px 24px rgba(217, 92, 43, 0.22);
   overflow: hidden;
@@ -3417,7 +3417,7 @@ body:has(#mainAppLayout:not(.hidden)) {
   border: 3px dashed #C4CDD9;
   color: #65758B;
   background: rgba(255,255,255,0.55);
-  font-size: clamp(3.2rem, 5vw, 4.4rem);
+  font-size: clamp(2.4rem, 4vw, 3rem);
   font-weight: 300;
   line-height: 1;
 }
