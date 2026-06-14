@@ -1,4 +1,6 @@
 import { buildScheduledCheckin, insertScheduledCheckin } from './checkinPolicy.js';
+import { v4 as uuidv4 } from 'uuid';
+import cronParser from 'cron-parser';
 import { resolveTimeZone } from './timeService.js';
 import {
   buildReminderFollowupCheckin,
@@ -76,12 +78,56 @@ export async function markDueScheduledItems(db, { userId = null, profileId = nul
     params.push(profileId);
   }
 
-  const dueResult = await db.run(`
-    UPDATE scheduled_checkins
-    SET status = 'due',
-        updated_at = CURRENT_TIMESTAMP
+  const rowsToUpdate = await db.all(`
+    SELECT * FROM scheduled_checkins
     WHERE ${clauses.join(' AND ')}
   `, params);
+
+  let dueResult = { changes: 0 };
+  if (rowsToUpdate.length > 0) {
+    const ids = rowsToUpdate.map(r => r.id);
+    dueResult = await db.run(`
+      UPDATE scheduled_checkins
+      SET status = 'due',
+          updated_at = CURRENT_TIMESTAMP
+      WHERE id IN (${ids.map(() => '?').join(',')})
+    `, ids);
+
+    // Spawn recurring instances
+    for (const row of rowsToUpdate) {
+      const metadata = safeJson(row.metadata_json, {});
+      if (metadata.cron && metadata.cadence === 'recurring') {
+        try {
+          const interval = cronParser.parseExpression(metadata.cron, { tz: metadata.timezone || 'Asia/Kolkata' });
+          const nextDate = interval.next().toISOString();
+          
+          await insertScheduledCheckin(db, {
+            id: uuidv4(),
+            userId: row.user_id,
+            profileId: row.profile_id,
+            goalId: row.goal_id,
+            relation: row.relation,
+            type: row.type,
+            status: 'scheduled',
+            scheduledFor: nextDate,
+            title: row.title,
+            pushTitle: row.push_title,
+            pushBody: row.push_body,
+            inAppTitle: row.in_app_title,
+            inAppBody: row.in_app_body,
+            detailedChatMessage: row.detailed_chat_message,
+            responseOptions: safeJson(row.response_options_json, []),
+            source: row.source,
+            category: row.category,
+            channel: row.channel,
+            metadata: { ...metadata, createdAt: new Date().toISOString() },
+          });
+        } catch (e) {
+          console.error('[ReminderService] Failed to schedule recurring checkin:', e.message);
+        }
+      }
+    }
+  }
 
   const triggeredResult = await activateTriggeredCheckins(db, { userId, profileId });
   const engagementResult = createEngagement

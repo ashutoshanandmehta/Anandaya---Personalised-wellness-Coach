@@ -226,12 +226,22 @@ Output schema:
   "action": "one allowed action",
   "kind": "reminder|checkin|null",
   "title": "short task/reminder title or null",
-  "localDateTime": "YYYY-MM-DD HH:mm or null",
-  "relativeTime": {"amount": number, "unit": "minutes|hours|days"} or null,
+  "timeSpec": {
+    "type": "absolute|relative|fuzzy|recurring",
+    "absolute": "YYYY-MM-DD HH:mm or null",
+    "relative": {"amount": number, "unit": "minutes|hours|days"} or null,
+    "fuzzy": "morning|evening|night|bedtime|lunch or null",
+    "recurring": {
+      "frequency": "daily|weekly|monthly|yearly",
+      "interval": 1,
+      "daysOfWeek": ["Monday", "Wednesday"],
+      "timeOfDay": "09:00"
+    }
+  },
   "timezone": "${timeZone}",
   "targetId": "existing reminder id if unambiguous or null",
   "targetDescription": "text target if any or null",
-  "update": {"title": string|null, "localDateTime": string|null, "oldText": string|null, "newText": string|null},
+  "update": {"title": string|null, "timeSpec": object|null, "oldText": string|null, "newText": string|null},
   "confirmationNeeded": boolean,
   "missingFields": [],
   "clarificationQuestion": string|null,
@@ -240,10 +250,11 @@ Output schema:
 }
 
 Timing rules:
-- Convert "tomorrow at 9 AM" to an exact localDateTime using currentLocalDate.
-- For "9 AM tomorrow", use 09:00.
-- For "kal 9 bje", use tomorrow 09:00 unless context strongly implies night.
-- For "raat 9 bje"/"night 9", use 21:00.
+- Map explicitly to "timeSpec.type" (absolute, relative, fuzzy, recurring).
+- Absolute: "tomorrow at 9 AM" -> absolute: "YYYY-MM-DD 09:00". "kal 9 bje" -> tomorrow 09:00. "raat 9 bje"/"night 9" -> 21:00.
+- Relative: "in 5 minutes", "after 1 hour" -> relative: {"amount": 5, "unit": "minutes"}.
+- Fuzzy: "tonight", "before bedtime", "after dinner" -> fuzzy: "bedtime" or "night".
+- Recurring: "every morning", "every Monday at 9 AM" -> recurring: {"frequency": "daily|weekly", "timeOfDay": "09:00", ...}.
 - If the time is vague like "night", ask one clarification.
 - If the task is clear but time missing, ask one warm clarification.
 - If update target is ambiguous across multiple active reminders, ask which one.
@@ -313,8 +324,7 @@ function normalizeAction(raw = {}) {
     action: actionName,
     kind: normalizeKind(raw.kind),
     title: cleanTitle(raw.title),
-    localDateTime: normalizeLocalDateTime(raw.localDateTime),
-    relativeTime: normalizeRelativeTime(raw.relativeTime),
+    timeSpec: raw.timeSpec || null,
     timezone: resolveTimeZone(raw.timezone),
     targetId: stringOrNull(raw.targetId),
     targetDescription: stringOrNull(raw.targetDescription),
@@ -353,8 +363,7 @@ function mergePendingToolAction(action, pendingFollowupOffer) {
     action: action.action === 'ask_clarification' ? pending.action : action.action,
     kind: action.kind || pending.kind,
     title: action.title || pending.title,
-    localDateTime: action.localDateTime || pending.localDateTime,
-    relativeTime: action.relativeTime || pending.relativeTime,
+    timeSpec: action.timeSpec || pending.timeSpec,
     targetId: action.targetId || pending.targetId,
     targetDescription: action.targetDescription || pending.targetDescription,
     update: {
@@ -387,14 +396,14 @@ function validateAction(action = {}) {
   if (action.action === 'create_reminder' || action.action === 'create_checkin') {
     const missing = [];
     if (!action.title) missing.push('title');
-    if (!action.localDateTime && !action.relativeTime && action._fallbackIntent !== INTENTS.DIRECT_REMINDER) missing.push('time');
+    if (!action.timeSpec && action._fallbackIntent !== INTENTS.DIRECT_REMINDER) missing.push('time');
     if (missing.length) {
       return { success: false, missingFields: missing };
     }
   }
 
   if (action.action === 'update_reminder' || action.action === 'update_checkin') {
-    const hasUpdate = action.update?.title || action.update?.localDateTime || action.update?.newText || action.localDateTime || action.title;
+    const hasUpdate = action.update?.title || action.update?.timeSpec || action.update?.newText || action.timeSpec || action.title;
     if (!hasUpdate) return { success: false, missingFields: ['update_details'] };
   }
 
@@ -489,6 +498,7 @@ async function executeToolAction({
       timeZone,
       sourceText: message,
       source,
+      timeSpec: action.timeSpec,
     });
 
     await createScheduledItem(db, record);
@@ -528,8 +538,8 @@ async function executeToolAction({
       };
     }
 
-    const dueAt = action.update?.localDateTime || action.localDateTime
-      ? resolveActionDueAt({ ...action, localDateTime: action.update?.localDateTime || action.localDateTime }, timeZone)
+    const dueAt = action.update?.timeSpec || action.timeSpec
+      ? resolveActionDueAt({ ...action, timeSpec: action.update?.timeSpec || action.timeSpec }, timeZone)
       : null;
     const title = action.update?.title || buildReplacementTitle(action.update) || action.title;
 
@@ -601,7 +611,7 @@ function classifyFallback({ message, pendingFollowupOffer, patientState }) {
       kind: 'reminder',
       update: {
         title: null,
-        localDateTime: null,
+        timeSpec: null,
         oldText: intent.metadata?.oldText || null,
         newText: intent.metadata?.newText || null,
       },
@@ -715,14 +725,18 @@ function enforceTrustInvariant(reply = '', toolResult = {}) {
 
 function resolveActionDueAt(action, fallbackTimeZone) {
   const timeZone = resolveTimeZone(action.timezone, fallbackTimeZone);
-  if (action.localDateTime) {
-    return localDateTimeToUtcIso({ localDateTime: action.localDateTime, timeZone });
+  if (!action.timeSpec) return null;
+
+  const spec = action.timeSpec;
+
+  if (spec.type === 'absolute' && spec.absolute) {
+    return localDateTimeToUtcIso({ localDateTime: spec.absolute, timeZone });
   }
 
-  if (action.relativeTime?.amount && action.relativeTime?.unit) {
-    const amount = Number(action.relativeTime.amount);
+  if (spec.type === 'relative' && spec.relative?.amount && spec.relative?.unit) {
+    const amount = Number(spec.relative.amount);
     if (!Number.isFinite(amount) || amount <= 0) return null;
-    const unit = String(action.relativeTime.unit).toLowerCase();
+    const unit = String(spec.relative.unit).toLowerCase();
     const ms = unit.startsWith('minute') ? amount * 60_000
       : unit.startsWith('hour') ? amount * 3_600_000
         : unit.startsWith('day') ? amount * 86_400_000
@@ -730,11 +744,61 @@ function resolveActionDueAt(action, fallbackTimeZone) {
     return ms ? new Date(Date.now() + ms).toISOString() : null;
   }
 
-  if (action._fallbackIntent === INTENTS.DIRECT_REMINDER) return null;
+  if (spec.type === 'fuzzy' && spec.fuzzy) {
+    const fuzzy = String(spec.fuzzy).toLowerCase();
+    let hour = 12;
+    if (fuzzy.includes('morning') || fuzzy.includes('breakfast') || fuzzy.includes('wake')) hour = 8;
+    else if (fuzzy.includes('lunch') || fuzzy.includes('noon')) hour = 13;
+    else if (fuzzy.includes('evening') || fuzzy.includes('sunset')) hour = 18;
+    else if (fuzzy.includes('night') || fuzzy.includes('dinner') || fuzzy.includes('bedtime')) hour = 21;
+    
+    // Simplistic mapping for fuzzy time
+    const todayCandidate = new Date();
+    todayCandidate.setUTCHours(hour, 0, 0, 0); // Not true timezone accurate but close enough for fallback
+    // We should ideally use nextLocalTimeUtc from timeService.
+    return nextLocalTimeUtc({ timeZone, hour, minute: 0, forceTomorrow: false });
+  }
+
+  if (spec.type === 'recurring' && spec.recurring) {
+    // Return the next occurrence as dueAt.
+    const timeOfDay = spec.recurring.timeOfDay || '09:00';
+    const [h, m] = timeOfDay.split(':');
+    const hour = parseInt(h, 10) || 9;
+    const minute = parseInt(m, 10) || 0;
+    return nextLocalTimeUtc({ timeZone, hour, minute, forceTomorrow: false });
+  }
+
   return null;
 }
 
-async function buildScheduledRecord({ userId, profile, title, dueAt, kind, timeZone, sourceText, source }) {
+function buildCronFromSpec(spec) {
+  if (spec.type !== 'recurring' || !spec.recurring) return null;
+  const timeOfDay = spec.recurring.timeOfDay || '09:00';
+  const [h, m] = timeOfDay.split(':');
+  const hour = parseInt(h, 10) || 9;
+  const minute = parseInt(m, 10) || 0;
+  
+  const freq = String(spec.recurring.frequency || '').toLowerCase();
+  
+  if (freq === 'daily') {
+    return `${minute} ${hour} * * *`;
+  }
+  
+  if (freq === 'weekly') {
+    const dayMap = { sunday: 0, monday: 1, tuesday: 2, wednesday: 3, thursday: 4, friday: 5, saturday: 6 };
+    let days = spec.recurring.daysOfWeek.map(d => dayMap[String(d).toLowerCase()]).filter(d => d !== undefined);
+    if (days.length === 0) days = [1]; // Default to monday if empty
+    return `${minute} ${hour} * * ${days.join(',')}`;
+  }
+  
+  if (freq === 'monthly') {
+    return `${minute} ${hour} 1 * *`;
+  }
+  
+  return `${minute} ${hour} * * *`;
+}
+
+async function buildScheduledRecord({ userId, profile, title, dueAt, kind, timeZone, sourceText, source, timeSpec }) {
   if (kind === 'checkin') {
     return buildStandaloneCheckinRecord({
       userId,
@@ -777,7 +841,8 @@ async function buildScheduledRecord({ userId, profile, title, dueAt, kind, timeZ
       kind,
       reminderType,
       goalType: reminderType,
-      cadence: 'one_time',
+      cadence: timeSpec?.type === 'recurring' ? 'recurring' : 'one_time',
+      cron: timeSpec?.type === 'recurring' ? buildCronFromSpec(timeSpec) : null,
       timezone: timeZone,
       sourceText,
       plannerSource: source,
@@ -936,21 +1001,27 @@ function cleanTitle(value) {
     .trim();
 }
 
-function normalizeLocalDateTime(value) {
-  const clean = stringOrNull(value);
-  if (!clean) return null;
-  const match = clean.match(/^(\d{4})-(\d{2})-(\d{2})[ T](\d{1,2}):(\d{2})(?::\d{2})?$/);
-  if (!match) return null;
-  return `${match[1]}-${match[2]}-${match[3]} ${String(match[4]).padStart(2, '0')}:${match[5]}`;
-}
-
-function normalizeRelativeTime(value) {
+function normalizeTimeSpec(value) {
   if (!value || typeof value !== 'object') return null;
-  const amount = Number(value.amount);
-  const unit = String(value.unit || '').toLowerCase();
-  if (!Number.isFinite(amount) || amount <= 0) return null;
-  if (!/^(minutes?|hours?|days?)$/.test(unit)) return null;
-  return { amount, unit: unit.replace(/s$/, '') + 's' };
+  
+  const type = String(value.type || '').toLowerCase();
+  if (!['absolute', 'relative', 'fuzzy', 'recurring'].includes(type)) return null;
+
+  return {
+    type,
+    absolute: stringOrNull(value.absolute),
+    relative: typeof value.relative === 'object' ? {
+      amount: Number(value.relative?.amount) || 0,
+      unit: String(value.relative?.unit || '').toLowerCase()
+    } : null,
+    fuzzy: stringOrNull(value.fuzzy),
+    recurring: typeof value.recurring === 'object' ? {
+      frequency: stringOrNull(value.recurring?.frequency),
+      interval: Number(value.recurring?.interval) || 1,
+      daysOfWeek: Array.isArray(value.recurring?.daysOfWeek) ? value.recurring.daysOfWeek.map(String) : [],
+      timeOfDay: stringOrNull(value.recurring?.timeOfDay)
+    } : null,
+  };
 }
 
 function normalizeUpdate(update = {}) {

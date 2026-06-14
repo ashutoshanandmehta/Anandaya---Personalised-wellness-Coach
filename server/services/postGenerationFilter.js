@@ -64,6 +64,13 @@ const FALSE_SCHEDULING_CONFIRMATION_PATTERNS = [
   /\bI\s+will\s+(?:remind|notify|alert|nudge)\s+you\s+at\b[^.?!\n]*(?:[.?!]|$)/gi,
   /\byou(?:'|')?ll\s+(?:get|receive)\s+(?:a\s+)?(?:reminder|notification|alert)\b/gi,
   /\byou\s+will\s+(?:get|receive)\s+(?:a\s+)?(?:reminder|notification|alert)\b/gi,
+  /\bReminder:\s+.*in\s+\d+\s+(?:minutes|hours)/gi,
+  /\bI(?:'|’)?d\s+be\s+happy\s+to\s+remind\s+you\b/gi,
+  /\bI(?:'|’)?m\s+a\s+text-based\s+AI\b/gi,
+  /\bI(?:'|’)?m\s+an\s+AI\s+language\s+model\b/gi,
+  /\bI\s+don(?:'|’)t\s+have\s+the\s+capability\s+to\s+set\s+reminders\b/gi,
+  /\bjust\s+a\s+simulation\b/gi,
+  /\bI\s+did\s+not\s+actually\s+set\s+a\s+reminder\b/gi,
 ];
 
 const ROUTINE_DISCLAIMER_PATTERNS = [
