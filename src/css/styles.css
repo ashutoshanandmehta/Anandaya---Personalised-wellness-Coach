@@ -3001,12 +3001,25 @@ body:has(#mainAppLayout:not(.hidden)) {
 }
 
 .typing-dots {
+  width: 52px;
+  min-width: 52px;
+  height: 32px;
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  gap: 6px;
   background: var(--surface);
   border-color: var(--border-subtle);
   box-shadow: var(--shadow-sm);
 }
 
 .typing-dots span {
+  width: 6px;
+  height: 6px;
+  display: block;
+  border-radius: 999px;
+  font-size: 0;
+  line-height: 0;
   background: var(--primary);
 }
 
@@ -3883,6 +3896,13 @@ body:has(#mainAppLayout:not(.hidden)) {
   .message.assistant .message-content {
     border-bottom-left-radius: 18px;
     box-shadow: 3px 4px 0 rgba(87, 64, 48, 0.07), var(--shadow-sm);
+  }
+
+  .typing-dots {
+    width: 48px;
+    min-width: 48px;
+    height: 30px;
+    gap: 5px;
   }
 
   .message.user .message-content {

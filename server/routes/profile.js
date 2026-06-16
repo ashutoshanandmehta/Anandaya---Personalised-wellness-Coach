@@ -1314,9 +1314,26 @@ router.post('/:profileId/chat', requireProfileOwnership, async (req, res) => {
 
     } catch (streamErr) {
       console.error('[Chat] Stream error:', streamErr);
-      res.write(`event: error\ndata: ${JSON.stringify({ message: "Response interrupted. Please tap retry." })}\n\n`);
-      res.end();
-      return; // Do not save partial corrupted message
+      try {
+        const fallbackReply = await answerFromProtocol({
+          question: message,
+          profile: profileRow,
+          history,
+          patientState: stateForLLM,
+          safety,
+        });
+        fullReply = fallbackReply;
+        followupOffer = null;
+        res.write(`event: token\ndata: ${JSON.stringify({ delta: fallbackReply })}\n\n`);
+        res.write(`event: metadata\ndata: ${JSON.stringify({ uiActions: [], mode: 'llm_answer_fallback', safety, slotName: 'non_stream_fallback' })}\n\n`);
+        res.write(`event: done\ndata: {}\n\n`);
+        res.end();
+      } catch (fallbackErr) {
+        console.error('[Chat] Non-stream fallback failed:', fallbackErr);
+        res.write(`event: error\ndata: ${JSON.stringify({ message: "I couldn't complete that reply just now. Please try once more." })}\n\n`);
+        res.end();
+        return; // Do not save partial corrupted message
+      }
     }
 
     // ── Background & Persistence Phase ─────────────────────────
