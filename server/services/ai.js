@@ -290,6 +290,12 @@ export function getAIProviderSummary() {
       summary: { fallbackOrder: slots.filter(s => s.task_type === 'summary').map(s => s.slot_name) }
     },
     slots: slots.map(s => ({ name: s.slot_name, status: s.status, active: s.active_requests })),
-    embeddings_configured: hfClients.length > 0
+    embeddings_configured: hfClients.length > 0,
+    huggingFaceTasks: {
+      embeddings: {
+        configured: hfClients.length > 0,
+        model: HF_EMBEDDING_MODEL,
+      },
+    },
   };
 }

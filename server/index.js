@@ -103,7 +103,7 @@ async function startServer() {
       console.log(`   ├─ Task routing: ${Object.entries(aiSummary.taskProviders)
         .map(([task, config]) => `${task}=${config.fallbackOrder.join(' → ')}`)
         .join('; ')}`);
-      console.log(`   └─ HF tasks: ${Object.entries(aiSummary.huggingFaceTasks)
+      console.log(`   └─ HF tasks: ${Object.entries(aiSummary.huggingFaceTasks || {})
         .map(([task, config]) => `${task}=${config.configured ? config.model : 'not configured'}`)
         .join(', ')}`);
     });
