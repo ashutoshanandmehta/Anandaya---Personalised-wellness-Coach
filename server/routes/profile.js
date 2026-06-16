@@ -31,6 +31,7 @@ import {
   updateLatestReminderText,
 } from '../services/reminderToolService.js';
 import { orchestrateToolAction } from '../services/toolOrchestrator.js';
+import { invalidateReminderListCache } from './scheduledCheckins.js';
 import { resolveTimeZone } from '../services/timeService.js';
 import multer from 'multer';
 import path from 'path';
@@ -298,6 +299,29 @@ function buildPendingScheduleCapture(baseOffer, parseResult = {}) {
   };
 }
 
+function setupSse(res) {
+  if (res.headersSent) return;
+  res.setHeader('Content-Type', 'text/event-stream');
+  res.setHeader('Cache-Control', 'no-cache');
+  res.setHeader('Connection', 'keep-alive');
+  // Disable proxy buffering (Render/Nginx) so chunks reach the browser immediately.
+  res.setHeader('X-Accel-Buffering', 'no');
+}
+
+function writeSseToken(res, text) {
+  if (!text) return;
+  res.write(`event: token\ndata: ${JSON.stringify({ delta: text })}\n\n`);
+}
+
+function writeSseMetadata(res, meta) {
+  res.write(`event: metadata\ndata: ${JSON.stringify(meta)}\n\n`);
+}
+
+function endSse(res) {
+  res.write(`event: done\ndata: {}\n\n`);
+  res.end();
+}
+
 async function saveAssistantAndReturn(db, res, {
   conversationId,
   profileId,
@@ -316,14 +340,18 @@ async function saveAssistantAndReturn(db, res, {
     safetyDomain: safety.domain,
   });
 
-  return res.json({
-    reply,
-    assistantMessage: reply,
+  setupSse(res);
+  writeSseToken(res, reply);
+  const { uiActions, ...restExtra } = extra || {};
+  writeSseMetadata(res, {
+    uiActions: Array.isArray(uiActions) ? uiActions : [],
     mode,
     safety,
-    ui: null,
-    ...extra,
+    slotName: 'deterministic',
+    ...restExtra,
   });
+  endSse(res);
+  return;
 }
 
 function normalizeList(value) {
@@ -845,8 +873,31 @@ router.post('/:profileId/chat', requireProfileOwnership, async (req, res) => {
     const isCrisisMode = safety.level === 'RED' || safety.level === 'ORANGE';
     const keepPendingOffer = pendingFollowupOffer && intentResult.intent === INTENTS.CLARIFICATION;
 
+    // Reminder/scheduling intents — only these need the tool orchestrator (and
+    // therefore the planner LLM call). For pure wellness/clarification/confusion
+    // turns, skip straight to the streaming LLM and save ~1–3s per message.
+    const schedulerIntents = new Set([
+      INTENTS.DIRECT_REMINDER,
+      INTENTS.REMINDER_UPDATE,
+      INTENTS.REMINDER_STATUS,
+      INTENTS.REMINDER_FAILURE,
+      INTENTS.TIMING_RESPONSE,
+      INTENTS.SCHEDULE_ACCEPTANCE,
+      INTENTS.DELEGATE_CHOICE,
+      INTENTS.CANCEL_FLOW,
+    ]);
+    // The intent classifier requires both pattern + time to flag a DIRECT_REMINDER.
+    // Catch the no-time case ("remind me to call mom") here so the orchestrator
+    // can ask for the time and persist a pendingToolAction for the next turn.
+    const messageLooksReminderShaped =
+      /\bremind\s+me\b|\bset\s+(?:a\s+)?(?:reminder|alarm)\b|\b(reminder|check[-\s]?in)\s+(?:to|for|me)\b/i.test(message);
+    const intentNeedsOrchestrator =
+      schedulerIntents.has(intentResult.intent) ||
+      Boolean(pendingFollowupOffer) ||
+      messageLooksReminderShaped;
+
     let toolPipelineFailed = false;
-    if (!isCrisisMode) {
+    if (!isCrisisMode && intentNeedsOrchestrator) {
       let toolTurn = null;
       try {
         toolTurn = await orchestrateToolAction({
@@ -869,25 +920,15 @@ router.post('/:profileId/chat', requireProfileOwnership, async (req, res) => {
           intent: intentResult?.intent,
         });
 
-        const schedulerIntents = new Set([
-          INTENTS.DIRECT_REMINDER,
-          INTENTS.REMINDER_UPDATE,
-          INTENTS.REMINDER_STATUS,
-          INTENTS.REMINDER_FAILURE,
-          INTENTS.TIMING_RESPONSE,
-          INTENTS.SCHEDULE_ACCEPTANCE,
-          INTENTS.DELEGATE_CHOICE,
-        ]);
-
-        if (schedulerIntents.has(intentResult.intent)) {
-          return saveAssistantAndReturn(db, res, {
-            conversationId,
-            profileId,
-            reply: "I understood that, but I couldn't save or check the schedule just now. Please try once more in a moment.",
-            safety,
-            mode: 'tool_preflight_failed',
-          });
-        }
+        // Reminder-shaped turns: don't let the LLM stream invent confirmation.
+        // Hand the user an honest fallback through SSE so the UI clears.
+        return saveAssistantAndReturn(db, res, {
+          conversationId,
+          profileId,
+          reply: "I understood that, but I couldn't save or check the schedule just now. Please try once more in a moment.",
+          safety,
+          mode: 'tool_preflight_failed',
+        });
       }
 
       if (toolTurn?.handled) {
@@ -903,6 +944,12 @@ router.post('/:profileId/chat', requireProfileOwnership, async (req, res) => {
           );
         } else if (pendingFollowupOffer) {
           await db.run('UPDATE patient_states SET pending_followup_offer_json = NULL WHERE profile_id = ?', [profileId]);
+        }
+
+        // If the orchestrator wrote to scheduled_checkins, drop cached lists
+        // so the next poll reflects reality immediately.
+        if (toolTurn.extra?.scheduledCheckins?.length || toolTurn.extra?.reminder) {
+          invalidateReminderListCache({ userId });
         }
 
         return saveAssistantAndReturn(db, res, {
@@ -1120,13 +1167,16 @@ router.post('/:profileId/chat', requireProfileOwnership, async (req, res) => {
       };
       currentMode = 'normal';
 
-      return res.json({
-        reply,
-        assistantMessage: reply,
+      setupSse(res);
+      writeSseToken(res, reply);
+      writeSseMetadata(res, {
+        uiActions: [],
         mode: 'normal_resumed',
         safety,
-        ui: null,
+        slotName: 'deterministic',
       });
+      endSse(res);
+      return;
     }
 
     // ── CRISIS MODE ROUTING ──────────────────────────────────────────────────────
@@ -1206,13 +1256,17 @@ router.post('/:profileId/chat', requireProfileOwnership, async (req, res) => {
         safetyDomain: 'mental_health_crisis',
       });
 
-      return res.json({
-        reply,
-        assistantMessage: reply,
+      setupSse(res);
+      writeSseToken(res, reply);
+      writeSseMetadata(res, {
+        uiActions: [],
         mode: 'safety_bypass',
         safety: { ...safety, level: 'RED', domain: 'mental_health_crisis' },
         ui: ui || null,
+        slotName: 'crisis_handler',
       });
+      endSse(res);
+      return;
     }
 
     // ── NON-CRISIS SAFETY BYPASS (ORANGE or non-mental-health RED) ───────────────
@@ -1238,13 +1292,17 @@ router.post('/:profileId/chat', requireProfileOwnership, async (req, res) => {
         safetyDomain: safety.domain,
       });
 
-      return res.json({
-        reply: safety.userMessage,
-        assistantMessage: safety.userMessage,
+      setupSse(res);
+      writeSseToken(res, safety.userMessage);
+      writeSseMetadata(res, {
+        uiActions: [],
         mode: 'safety_bypass',
         safety,
         ui: safety.ui || null,
+        slotName: 'safety_bypass',
       });
+      endSse(res);
+      return;
     }
 
     // ── LLM PATH (GREEN / YELLOW) ─────────────────────────────────────────────
@@ -1292,13 +1350,11 @@ router.post('/:profileId/chat', requireProfileOwnership, async (req, res) => {
       additionalGuardsAttached: Boolean(guardsPayload),
     });
 
-    // Send SSE Headers
-    res.setHeader('Content-Type', 'text/event-stream');
-    res.setHeader('Cache-Control', 'no-cache');
-    res.setHeader('Connection', 'keep-alive');
+    setupSse(res);
 
     let fullReply = '';
     let followupOffer = null;
+    let slotNameForLog = null;
 
     try {
       // 1. Get the stream
@@ -1310,26 +1366,31 @@ router.post('/:profileId/chat', requireProfileOwnership, async (req, res) => {
         safety,
         additionalGuards: guardsPayload,
       });
+      slotNameForLog = slotName;
 
-      // 2. We can concurrently compute the check-in offer using the old profile
-      const offerPromise = buildCheckinOffer({
-        message,
-        profile: profileRow,
-        patientState: stateForLLM,
-        updatedProfile: structuredProfile, // Use existing profile for offer
-        rawReply: '', // Won't be available
-        safety,
-      }).catch(err => {
-        console.error('[CheckinOffer] Failed:', err);
-        return null;
-      });
+      // 2. Compute the check-in offer concurrently. buildCheckinOffer is
+      //    synchronous and may return null; wrap with Promise.resolve so
+      //    .catch never blows up the stream path.
+      const offerPromise = Promise.resolve()
+        .then(() => buildCheckinOffer({
+          message,
+          profile: profileRow,
+          patientState: stateForLLM,
+          updatedProfile: structuredProfile,
+          rawReply: '',
+          safety,
+        }))
+        .catch(err => {
+          console.error('[CheckinOffer] Failed:', err);
+          return null;
+        });
 
       // 3. Pump the stream
       for await (const chunk of stream) {
         const text = chunk.choices[0]?.delta?.content || '';
         if (text) {
           fullReply += text;
-          res.write(`event: token\ndata: ${JSON.stringify({ delta: text })}\n\n`);
+          writeSseToken(res, text);
         }
       }
 
@@ -1337,9 +1398,8 @@ router.post('/:profileId/chat', requireProfileOwnership, async (req, res) => {
 
       // 4. Send Metadata and end stream
       const uiActions = followupOffer ? [{ type: 'show_checkin_offer', offer: followupOffer }] : [];
-      res.write(`event: metadata\ndata: ${JSON.stringify({ uiActions, mode: 'llm_answer', safety, slotName })}\n\n`);
-      res.write(`event: done\ndata: {}\n\n`);
-      res.end();
+      writeSseMetadata(res, { uiActions, mode: 'llm_answer', safety, slotName });
+      endSse(res);
 
     } catch (streamErr) {
       console.error('[Chat] Stream error:', streamErr);
@@ -1354,14 +1414,15 @@ router.post('/:profileId/chat', requireProfileOwnership, async (req, res) => {
         });
         fullReply = fallbackReply;
         followupOffer = null;
-        res.write(`event: token\ndata: ${JSON.stringify({ delta: fallbackReply })}\n\n`);
-        res.write(`event: metadata\ndata: ${JSON.stringify({ uiActions: [], mode: 'llm_answer_fallback', safety, slotName: 'non_stream_fallback' })}\n\n`);
-        res.write(`event: done\ndata: {}\n\n`);
-        res.end();
+        writeSseToken(res, fallbackReply);
+        writeSseMetadata(res, { uiActions: [], mode: 'llm_answer_fallback', safety, slotName: 'non_stream_fallback' });
+        endSse(res);
       } catch (fallbackErr) {
         console.error('[Chat] Non-stream fallback failed:', fallbackErr);
-        res.write(`event: error\ndata: ${JSON.stringify({ message: "I couldn't complete that reply just now. Please try once more." })}\n\n`);
-        res.end();
+        try {
+          res.write(`event: error\ndata: ${JSON.stringify({ message: "I couldn't complete that reply just now. Please try once more." })}\n\n`);
+          res.end();
+        } catch {}
         return; // Do not save partial corrupted message
       }
     }
@@ -1399,7 +1460,14 @@ router.post('/:profileId/chat', requireProfileOwnership, async (req, res) => {
 
   } catch (error) {
     console.error('[Chat]', error);
-    res.status(500).json({ error: 'Failed to process message' });
+    // Emit an SSE-shaped error so the frontend always clears the typing dots.
+    try {
+      if (!res.headersSent) setupSse(res);
+      res.write(`event: error\ndata: ${JSON.stringify({ message: 'Failed to process message' })}\n\n`);
+      res.end();
+    } catch {
+      if (!res.headersSent) res.status(500).json({ error: 'Failed to process message' });
+    }
   }
 });
 

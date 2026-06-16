@@ -142,7 +142,7 @@ export async function orchestrateToolAction({
 
   // Validate all actions
   for (const action of actions) {
-    const validation = validateAction(action);
+    const validation = validateAction(action, { message });
     if (!validation.success) {
       const reply = validation.reply || buildMissingFieldsReply(action, profile);
       await auditToolAction(db, {
@@ -418,7 +418,7 @@ function mergePendingToolAction(action, pendingFollowupOffer) {
   };
 }
 
-function validateAction(action = {}) {
+function validateAction(action = {}, validationContext = {}) {
   if (!TOOL_ACTIONS.has(action.action)) {
     return { success: false, missingFields: ['action'] };
   }
@@ -442,6 +442,30 @@ function validateAction(action = {}) {
     if (!action.timeSpec && action._fallbackIntent !== INTENTS.DIRECT_REMINDER) missing.push('time');
     if (missing.length) {
       return { success: false, missingFields: missing };
+    }
+
+    // Refuse fuzzy times the planner invented. If the user didn't literally
+    // use the fuzzy word ("tonight", "morning"), ask for a concrete time.
+    const spec = action.timeSpec;
+    if (spec?.type === 'fuzzy' && action._fallbackIntent !== INTENTS.DIRECT_REMINDER) {
+      const userText = String(validationContext.message || '').toLowerCase();
+      const fuzzyWord = String(spec.fuzzy || '').toLowerCase().trim();
+      const fuzzySynonyms = {
+        morning: ['morning', 'breakfast', 'wake'],
+        evening: ['evening', 'sunset'],
+        night: ['night', 'tonight'],
+        bedtime: ['bedtime', 'bed', 'sleep'],
+        lunch: ['lunch', 'noon'],
+      };
+      const synonyms = fuzzySynonyms[fuzzyWord] || [fuzzyWord];
+      const userSaidIt = synonyms.some(word => word && userText.includes(word));
+      if (!userSaidIt) {
+        return {
+          success: false,
+          missingFields: ['time'],
+          reply: "What time should I use for this? You can say it casually, like “tomorrow at 9 AM” or “in 30 minutes.”",
+        };
+      }
     }
   }
 

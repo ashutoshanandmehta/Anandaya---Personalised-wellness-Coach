@@ -30,6 +30,10 @@ const __dirname = dirname(__filename);
 const app = express();
 const PORT = process.env.PORT || 3001;
 
+// Render/most hosting providers sit behind a single proxy hop. Trust it so
+// express-rate-limit, secure cookies, and `req.ip` see the real client IP.
+app.set('trust proxy', 1);
+
 // ── Security & Middleware ──────────────────────────────────────
 app.use(helmet({
   contentSecurityPolicy: false, // Allow inline styles/scripts for dev

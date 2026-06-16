@@ -159,8 +159,15 @@ export async function listReminderItems(db, {
   profileId = null,
   status = 'visible',
   limit = 30,
+  markDue = false,
 } = {}) {
-  await markDueScheduledItems(db, { userId, profileId });
+  // The background scheduler (server/services/reminderScheduler.js) already
+  // marks due items every 15–60s. Polling endpoints should NOT pay that cost
+  // on every request — opt in with `markDue: true` only when the caller
+  // actually needs the freshest state (e.g. status messages mid-chat).
+  if (markDue) {
+    await markDueScheduledItems(db, { userId, profileId });
+  }
 
   const params = [userId];
   const clauses = ['sc.user_id = ?'];
@@ -584,6 +591,7 @@ export async function buildReminderStatusMessage(db, { userId, profileId, profil
     profileId,
     status: 'active',
     limit: 8,
+    markDue: true,
   });
   const name = profile?.name || 'this profile';
   const isSelf = isSelfProfile(profile);
