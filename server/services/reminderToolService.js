@@ -1,6 +1,6 @@
 import { buildScheduledCheckin, insertScheduledCheckin } from './checkinPolicy.js';
 import { v4 as uuidv4 } from 'uuid';
-import cronParser from 'cron-parser';
+import { CronExpressionParser } from 'cron-parser';
 import { resolveTimeZone } from './timeService.js';
 import {
   buildReminderFollowupCheckin,
@@ -98,7 +98,7 @@ export async function markDueScheduledItems(db, { userId = null, profileId = nul
       const metadata = safeJson(row.metadata_json, {});
       if (metadata.cron && metadata.cadence === 'recurring') {
         try {
-          const interval = cronParser.parseExpression(metadata.cron, { tz: metadata.timezone || 'Asia/Kolkata' });
+          const interval = CronExpressionParser.parse(metadata.cron, { tz: metadata.timezone || 'Asia/Kolkata' });
           const nextDate = interval.next().toISOString();
           
           await insertScheduledCheckin(db, {

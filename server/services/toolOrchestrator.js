@@ -200,6 +200,7 @@ export async function orchestrateToolAction({
 
   // Build replies
   let finalReply = '';
+  const seenReplyParts = new Set();
   for (const { action, toolResult } of executionResults) {
     const replyPart = await buildFinalToolReply({
       action,
@@ -208,6 +209,8 @@ export async function orchestrateToolAction({
       timeZone,
     });
     if (replyPart) {
+      if (seenReplyParts.has(replyPart)) continue;
+      seenReplyParts.add(replyPart);
       finalReply += finalReply ? `\n\n${replyPart}` : replyPart;
     }
   }
@@ -1078,7 +1081,7 @@ function normalizeTimeSpec(value) {
 function normalizeUpdate(update = {}) {
   return {
     title: cleanTitle(update?.title),
-    localDateTime: normalizeLocalDateTime(update?.localDateTime),
+    timeSpec: update?.timeSpec && typeof update.timeSpec === 'object' ? update.timeSpec : null,
     oldText: stringOrNull(update?.oldText),
     newText: stringOrNull(update?.newText),
   };

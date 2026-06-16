@@ -74,13 +74,17 @@ function buildProfileSnapshot(profile = {}, patientState = {}) {
   ].filter(Boolean).join('\n');
 }
 
-function buildSystemPrompt({ profile, patientState, safetyContext, protocolContext }) {
+function buildSystemPrompt({ profile, patientState, safetyContext, protocolContext, additionalGuards }) {
   const patientName = profile.name || 'there';
   const profileSnapshot = buildProfileSnapshot(profile, patientState);
 
+  const guardsBlock = additionalGuards && String(additionalGuards).trim()
+    ? `\n\nRUNTIME GUARDS (highest priority — override any tone or formatting rule below):\n${String(additionalGuards).trim()}\n`
+    : '';
+
   return `You are Anandaya's AI wellness companion, a warm and supportive coach guiding ${patientName}.
 
-${safetyContext || ''}
+${safetyContext || ''}${guardsBlock}
 
 ${profileSnapshot}
 
@@ -190,7 +194,8 @@ export async function answerFromProtocol({
   profile,
   history,
   patientState,
-  safety
+  safety,
+  additionalGuards,
 }) {
   // Hard guards bypassing the LLM entirely
   if (safety.level === "RED") {
@@ -213,6 +218,7 @@ export async function answerFromProtocol({
     patientState,
     safetyContext: safety.llmSafetyContext,
     protocolContext,
+    additionalGuards,
   });
 
   console.log('[PROTOCOL RETRIEVAL]', {
@@ -237,7 +243,8 @@ export async function answerFromProtocolStream({
   profile,
   history,
   patientState,
-  safety
+  safety,
+  additionalGuards,
 }) {
   // Hard guards bypassing the LLM entirely
   if (safety.level === "RED" || (safety.level === "ORANGE" && safety.userMessage)) {
@@ -251,7 +258,7 @@ export async function answerFromProtocolStream({
   });
   const protocolContext = formatProtocolChunks(retrieval.chunks);
   const systemPrompt = buildSystemPrompt({
-    profile, patientState, safetyContext: safety.llmSafetyContext, protocolContext,
+    profile, patientState, safetyContext: safety.llmSafetyContext, protocolContext, additionalGuards,
   });
 
   return await chatStream(systemPrompt, history, question, 0.3);
