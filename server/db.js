@@ -18,11 +18,12 @@ if (!connectionUrl.startsWith('file:') && !connectionUrl.startsWith('libsql:') &
 
 if (process.env.TURSO_DATABASE_URL) {
   isRemoteDb = true;
-  connectionUrl = process.env.TURSO_DATABASE_URL;
-  // If an auth token is provided and not already in the URL, append it
+  connectionUrl = process.env.TURSO_DATABASE_URL.trim();
+  // If an auth token is provided and not already in the URL, append it safely.
   if (process.env.TURSO_AUTH_TOKEN && !connectionUrl.includes('authToken=')) {
-    const separator = connectionUrl.includes('?') ? '&' : '?';
-    connectionUrl += `${separator}authToken=${process.env.TURSO_AUTH_TOKEN}`;
+    const parsed = new URL(connectionUrl);
+    parsed.searchParams.set('authToken', process.env.TURSO_AUTH_TOKEN.trim());
+    connectionUrl = parsed.toString();
   }
 }
 
@@ -44,12 +45,14 @@ export async function getDb() {
     filename: connectionUrl,
     driver: sqlite3.Database
   });
-  
-  await db.exec(`
-    PRAGMA journal_mode = WAL;
-    PRAGMA busy_timeout = 5000;
-    PRAGMA synchronous = NORMAL;
-  `);
+
+  if (!isRemoteDb) {
+    await db.exec(`
+      PRAGMA journal_mode = WAL;
+      PRAGMA busy_timeout = 5000;
+      PRAGMA synchronous = NORMAL;
+    `);
+  }
   
   await initDb();
   return db;
