@@ -55,6 +55,7 @@ registerSlot('main_openai_2', GROQ_MODELS.GPT_OSS_120B, process.env.GROQ_MAIN_OP
 // Planner
 registerSlot('planner_llama8_1', GROQ_MODELS.LLAMA8, process.env.GROQ_PLANNER_LLAMA8_1_KEY, 'planner', 50);
 registerSlot('planner_qwen_1', GROQ_MODELS.QWEN32, process.env.GROQ_PLANNER_QWEN_1_KEY, 'planner', 70);
+registerSlot('planner_qwen_2', GROQ_MODELS.QWEN32, process.env.GROQ_PLANNER_QWEN_2_KEY, 'planner', 70);
 
 // Summary
 registerSlot('summary_llama8_1', GROQ_MODELS.LLAMA8, process.env.GROQ_SUMMARY_LLAMA8_1_KEY, 'summary', 50);

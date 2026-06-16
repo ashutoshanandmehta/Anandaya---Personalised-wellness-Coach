@@ -13,9 +13,59 @@ services:
         sync: false
       - key: TURSO_AUTH_TOKEN
         sync: false
+      - key: APP_TIMEZONE
+        value: Asia/Kolkata
+      - key: SESSION_SECRET
+        sync: false
+      - key: FRONTEND_URL
+        value: https://health-coach-ai.onrender.com
+      - key: BACKEND_URL
+        value: https://health-coach-ai.onrender.com
+      - key: GOOGLE_CALLBACK_URL
+        value: https://health-coach-ai.onrender.com/api/auth/google/callback
+      - key: GOOGLE_CLIENT_ID
+        sync: false
+      - key: GOOGLE_CLIENT_SECRET
+        sync: false
       - key: OPENAI_API_KEY
         sync: false
       - key: GROQ_API_KEY
         sync: false
+      - key: GROQ_MAIN_OPENAI_1_KEY
+        sync: false
+      - key: GROQ_MAIN_OPENAI_2_KEY
+        sync: false
+      - key: GROQ_MAIN_LLAMA70_1_KEY
+        sync: false
+      - key: GROQ_MAIN_LLAMA70_2_KEY
+        sync: false
+      - key: GROQ_MAIN_LLAMA_SCOUT_1_KEY
+        sync: false
+      - key: GROQ_MAIN_LLAMA_SCOUT_2_KEY
+        sync: false
+      - key: GROQ_PLANNER_QWEN_1_KEY
+        sync: false
+      - key: GROQ_PLANNER_QWEN_2_KEY
+        sync: false
+      - key: GROQ_PLANNER_LLAMA8_1_KEY
+        sync: false
+      - key: GROQ_SUMMARY_LLAMA8_1_KEY
+        sync: false
+      - key: GROQ_SUMMARY_QWEN_1_KEY
+        sync: false
+      - key: GROQ_RESERVE_1_KEY
+        sync: false
       - key: GEMINI_API_KEY
         sync: false
+      - key: HF_EMBEDDING_1_TOKEN
+        sync: false
+      - key: HF_EMBEDDING_2_TOKEN
+        sync: false
+      - key: HF_EMBEDDING_3_TOKEN
+        sync: false
+      - key: HF_EMBEDDING_MODEL
+        value: sentence-transformers/all-MiniLM-L6-v2
+      - key: ENABLE_SEMANTIC_RAG
+        value: "true"
+      - key: RAG_EMBEDDING_TIMEOUT_MS
+        value: "2000"
