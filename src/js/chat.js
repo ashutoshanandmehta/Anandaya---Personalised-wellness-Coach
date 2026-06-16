@@ -428,7 +428,21 @@ async function submitMessage(text, { resetInput = false } = {}) {
       body: JSON.stringify({ message: text })
     });
 
-    if (!response.ok) throw new Error('Network response was not ok');
+    if (!response.ok) {
+      let errorMessage = 'I could not send that message just now. Please try again in a moment.';
+      try {
+        const errorPayload = await response.clone().json();
+        errorMessage = errorPayload.error || errorPayload.message || errorMessage;
+      } catch {
+        try {
+          const errorText = await response.text();
+          if (errorText) errorMessage = errorText.slice(0, 220);
+        } catch {
+          // Keep the friendly fallback.
+        }
+      }
+      throw new Error(errorMessage);
+    }
 
     const reader = response.body.getReader();
     const decoder = new TextDecoder();

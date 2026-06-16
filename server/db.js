@@ -459,6 +459,23 @@ async function initDb() {
   try { await db.exec('ALTER TABLE messages ADD COLUMN safety_action TEXT;'); } catch (e) { /* ignore if exists */ }
   try { await db.exec('ALTER TABLE messages ADD COLUMN safety_domain TEXT;'); } catch (e) { /* ignore if exists */ }
 
+  // Safe additive migrations for safety audit tables that may already exist in Turso.
+  try { await db.exec('ALTER TABLE safety_events ADD COLUMN user_id TEXT;'); } catch (e) { /* ignore if exists */ }
+  try { await db.exec('ALTER TABLE safety_events ADD COLUMN profile_id TEXT;'); } catch (e) { /* ignore if exists */ }
+  try { await db.exec('ALTER TABLE safety_events ADD COLUMN message_preview TEXT;'); } catch (e) { /* ignore if exists */ }
+  try { await db.exec('ALTER TABLE safety_events ADD COLUMN level TEXT;'); } catch (e) { /* ignore if exists */ }
+  try { await db.exec('ALTER TABLE safety_events ADD COLUMN action TEXT;'); } catch (e) { /* ignore if exists */ }
+  try { await db.exec('ALTER TABLE safety_events ADD COLUMN domain TEXT;'); } catch (e) { /* ignore if exists */ }
+  try { await db.exec('ALTER TABLE safety_events ADD COLUMN reasons_json TEXT;'); } catch (e) { /* ignore if exists */ }
+  try { await db.exec('ALTER TABLE safety_events ADD COLUMN matched_rules_json TEXT;'); } catch (e) { /* ignore if exists */ }
+  try { await db.exec('ALTER TABLE safety_events ADD COLUMN created_at DATETIME DEFAULT CURRENT_TIMESTAMP;'); } catch (e) { /* ignore if exists */ }
+
+  try { await db.exec('ALTER TABLE safety_mode_transitions ADD COLUMN profile_id TEXT;'); } catch (e) { /* ignore if exists */ }
+  try { await db.exec('ALTER TABLE safety_mode_transitions ADD COLUMN from_mode TEXT;'); } catch (e) { /* ignore if exists */ }
+  try { await db.exec('ALTER TABLE safety_mode_transitions ADD COLUMN to_mode TEXT;'); } catch (e) { /* ignore if exists */ }
+  try { await db.exec('ALTER TABLE safety_mode_transitions ADD COLUMN reason TEXT;'); } catch (e) { /* ignore if exists */ }
+  try { await db.exec('ALTER TABLE safety_mode_transitions ADD COLUMN created_at DATETIME DEFAULT CURRENT_TIMESTAMP;'); } catch (e) { /* ignore if exists */ }
+
   // Safe additive migrations for patient_states table
   try { await db.exec("ALTER TABLE patient_states ADD COLUMN safety_mode TEXT DEFAULT 'normal';"); } catch (e) { /* ignore */ }
   try { await db.exec("ALTER TABLE patient_states ADD COLUMN safety_mode_started_at DATETIME;"); } catch (e) { /* ignore */ }
