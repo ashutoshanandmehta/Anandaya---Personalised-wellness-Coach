@@ -19,6 +19,7 @@ export const appState = {
 };
 
 export async function initApp() {
+  initTheme();
   initAuth();
   initProfiles(appState);
   initChat(appState);
@@ -157,7 +158,6 @@ export function showComingSoon(message = 'This will be live soon.') {
 
 function initComingSoonPlaceholders() {
   const bindings = [
-    ['darkModePlaceholderBtn', 'Dark mode will be live soon.'],
     ['completeSessionBtn', 'Complete Session will be live soon.'],
     ['attachmentPlaceholderBtn', 'Attachments will be live soon.'],
   ];
@@ -169,5 +169,35 @@ function initComingSoonPlaceholders() {
       event.preventDefault();
       showComingSoon(message);
     });
+  });
+}
+
+/* ── Theme (light / dark) ─────────────────────────────────────── */
+const THEME_KEY = 'anandaya:theme';
+
+function applyTheme(theme) {
+  const isDark = theme === 'dark';
+  document.documentElement.classList.toggle('dark', isDark);
+  document.documentElement.setAttribute('data-theme', isDark ? 'dark' : 'light');
+  const btn = document.getElementById('themeToggleBtn');
+  if (btn) {
+    btn.setAttribute('aria-pressed', String(isDark));
+    btn.setAttribute('title', isDark ? 'Switch to light mode' : 'Switch to dark mode');
+    btn.setAttribute('aria-label', isDark ? 'Switch to light mode' : 'Switch to dark mode');
+  }
+}
+
+function initTheme() {
+  let stored = null;
+  try { stored = localStorage.getItem(THEME_KEY); } catch {}
+  applyTheme(stored === 'dark' ? 'dark' : 'light');
+
+  const btn = document.getElementById('themeToggleBtn');
+  if (!btn) return;
+  btn.addEventListener('click', (event) => {
+    event.preventDefault();
+    const next = document.documentElement.classList.contains('dark') ? 'light' : 'dark';
+    applyTheme(next);
+    try { localStorage.setItem(THEME_KEY, next); } catch {}
   });
 }

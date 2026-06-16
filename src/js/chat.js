@@ -96,6 +96,16 @@ export function initChat(stateRef) {
     });
   }
 
+  // Mobile × close button inside the sidebar
+  const rightSidebarClose = document.getElementById('rightSidebarClose');
+  if (rightSidebarClose) {
+    rightSidebarClose.addEventListener('click', () => {
+      document.getElementById('rightSidebar').classList.remove('open');
+      const overlay = document.getElementById('rightSidebarOverlay');
+      if (overlay) overlay.classList.add('hidden');
+    });
+  }
+
   // New Profile Button in Left Nav
   const leftNavNewProfileBtn = document.getElementById('leftNavNewProfileBtn');
   if (leftNavNewProfileBtn) {
@@ -318,9 +328,29 @@ export async function loadChatHistory() {
     if (messages.length === 0) {
       const activeProfile = appState.profiles?.find(p => p.id === appState.activeProfileId);
       const name = activeProfile?.name || 'you';
-      
-      const msg = `Hi 😊\nI’ve created a profile for ${name}.\n\nTo keep guidance safe and personal, share just these basics when you can:\n\n1. Age\n2. Sex assigned at birth\n3. Height\n4. Weight\n\nA rough format is fine, like: 34 male 170 cm 67 kg.`;
-      
+      const relation = String(activeProfile?.relation || '').toLowerCase();
+      const isSelfProfile = relation === 'self' || relation === 'myself';
+
+      // For a self-profile, age + sex are already on the user account from
+      // signup. Only ask for what we don't yet have.
+      const user = appState.currentUser || {};
+      const hasDob = isSelfProfile && Boolean(String(user.dateOfBirth || '').trim());
+      const hasGender = isSelfProfile && Boolean(String(user.gender || '').trim());
+
+      const needed = [];
+      if (!hasDob) needed.push('Age');
+      if (!hasGender) needed.push('Sex assigned at birth');
+      needed.push('Height');
+      needed.push('Weight');
+
+      let msg;
+      if (needed.length === 2) {
+        msg = `Hi 😊\nI’ve created a profile for ${name}.\n\nI already have your basics from signup — could you share your height and weight when you can? A rough format is fine, like: 170 cm 67 kg.`;
+      } else {
+        const lines = needed.map((item, i) => `${i + 1}. ${item}`).join('\n');
+        msg = `Hi 😊\nI’ve created a profile for ${name}.\n\nTo keep guidance safe and personal, share just these basics when you can:\n\n${lines}\n\nA rough format is fine, like: 34 male 170 cm 67 kg.`;
+      }
+
       appendMessage('assistant', msg);
     } else {
       messages.forEach(msg => appendMessage(msg.role, msg.content, false));

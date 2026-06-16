@@ -67,16 +67,17 @@
   --r-2xl: 24px;
   --r-full: 9999px;
 
-  /* Typography */
+  /* Typography — base sized so 100% browser zoom feels right (was tuned
+     too large; users were dropping to 75% to compensate). */
   --font: 'Inter', 'Manrope', system-ui, sans-serif;
   --font-serif: 'Playfair Display', Georgia, serif;
-  --text-xs:  0.75rem;
-  --text-sm:  0.8125rem;
-  --text-base: 0.9375rem;
-  --text-lg:  1.0625rem;
-  --text-xl:  1.25rem;
-  --text-2xl: 1.5rem;
-  --text-3xl: 1.875rem;
+  --text-xs:  0.6875rem;   /* 11px */
+  --text-sm:  0.75rem;     /* 12px */
+  --text-base: 0.8125rem;  /* 13px */
+  --text-lg:  0.9375rem;   /* 15px */
+  --text-xl:  1.0625rem;   /* 17px */
+  --text-2xl: 1.25rem;     /* 20px */
+  --text-3xl: 1.5rem;      /* 24px */
 
   /* Transitions */
   --ease: cubic-bezier(0.16, 1, 0.3, 1);
@@ -89,6 +90,54 @@
   --shadow-sm:   0 2px 8px rgba(87, 64, 48, 0.07);
   --shadow-md:   0 8px 24px rgba(87, 64, 48, 0.10);
   --shadow-lg:   0 18px 48px rgba(87, 64, 48, 0.14);
+
+  color-scheme: light;
+}
+
+/* ── Dark theme tokens ─────────────────────────────────────────────
+   Toggled by adding `.dark` to <html> (see initTheme in src/js/app.js).
+   Keeps the same warm brand orange, swaps the surfaces to dark slate. */
+html.dark {
+  --bg:               #15171A;
+  --bg-primary:       #15171A;
+  --bg-secondary:     #1B1E22;
+  --surface:          #20242A;
+  --surface-soft:     #262B32;
+  --surface-elevated: #262B32;
+  --surface-hover:    #2C323A;
+
+  --border:           #2E3540;
+  --border-subtle:    #262B33;
+  --border-focus:     #E37148;
+  --c-border:         #2E3540;
+  --c-surface:        #20242A;
+
+  --text-primary:     #ECE7E2;
+  --text-main:        #ECE7E2;
+  --text-secondary:   #B5ADA6;
+  --text-muted:       #8A8278;
+  --text-inverse:     #15171A;
+
+  --primary:          #E37148;
+  --primary-hover:    #EF8259;
+  --primary-soft:     rgba(227, 113, 72, 0.18);
+  --brand-blue:       #E37148;
+  --brand-blue-soft:  #EF8259;
+  --brand-blue-dim:   rgba(227, 113, 72, 0.18);
+  --brand-blue-glow:  rgba(227, 113, 72, 0.28);
+  --brand-green:      #8FBE73;
+  --brand-green-soft: #8FBE73;
+  --brand-yellow:     #EAB562;
+  --danger:           #E26659;
+  --error:            #E26659;
+  --danger-soft:      rgba(226, 102, 89, 0.18);
+
+  --shadow-soft: 0 8px 24px rgba(0, 0, 0, 0.35);
+  --shadow-sm:   0 2px 8px rgba(0, 0, 0, 0.35);
+  --shadow-md:   0 8px 24px rgba(0, 0, 0, 0.4);
+  --shadow-lg:   0 18px 48px rgba(0, 0, 0, 0.5);
+
+  color-scheme: dark;
 }
 
 /* ── Reset ────────────────────────────────────────────────────── */
@@ -104,7 +153,7 @@ body {
   font-size: var(--text-base);
   color: var(--text-primary);
   background: var(--bg);
-  line-height: 1.6;
+  line-height: 1.55;
   -webkit-font-smoothing: antialiased;
   -moz-osx-font-smoothing: grayscale;
 }
@@ -1489,6 +1538,32 @@ body {
 }
 .right-sidebar-toggle:hover { background: var(--surface-elevated); color: var(--text-primary); }
 
+/* Theme toggle icon swap: show moon in light mode, sun in dark mode. */
+.theme-toggle-btn .theme-icon-sun { display: none; }
+.theme-toggle-btn .theme-icon-moon { display: block; }
+html.dark .theme-toggle-btn .theme-icon-sun { display: block; }
+html.dark .theme-toggle-btn .theme-icon-moon { display: none; }
+
+/* Mobile-only close (×) button inside the sliding sidebar — hidden on desktop. */
+.right-sidebar-close {
+  display: none;
+  position: absolute;
+  top: var(--sp-3);
+  right: var(--sp-3);
+  width: 32px;
+  height: 32px;
+  border-radius: 50%;
+  background: var(--surface);
+  border: 1px solid var(--border);
+  color: var(--text-secondary);
+  cursor: pointer;
+  align-items: center;
+  justify-content: center;
+  z-index: 11;
+  transition: color var(--t-fast), background var(--t-fast);
+}
+.right-sidebar-close:hover { color: var(--text-primary); background: var(--surface-elevated); }
+
 /* ── Right Sidebar Modules (Progressive Disclosure) ──────── */
 
 .right-sidebar-content {
@@ -1817,6 +1892,21 @@ body {
     top: calc(56px + var(--sp-4));
     left: auto;
     z-index: 30;
+    background: var(--surface);
+    border: 1px solid var(--border);
+    color: var(--text-secondary);
+  }
+
+  /* Show the × close button only when the sidebar is open on mobile. */
+  .right-sidebar.open .right-sidebar-close {
+    display: inline-flex;
+  }
+
+  /* Hide the external chevron-style toggle while the sidebar is open so it
+     doesn't sit on top of the sidebar content. */
+  .right-sidebar.open ~ .right-sidebar-toggle,
+  .right-sidebar.open .right-sidebar-toggle {
+    display: none;
   }
 }
 
