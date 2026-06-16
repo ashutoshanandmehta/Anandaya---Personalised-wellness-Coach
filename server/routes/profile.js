@@ -846,19 +846,49 @@ router.post('/:profileId/chat', requireProfileOwnership, async (req, res) => {
     const keepPendingOffer = pendingFollowupOffer && intentResult.intent === INTENTS.CLARIFICATION;
 
     if (!isCrisisMode) {
-      const toolTurn = await orchestrateToolAction({
-        db,
-        userId,
-        profileId,
-        profile: profileRow,
-        patientState: stateRow,
-        history,
-        message,
-        conversationId,
-        pendingFollowupOffer,
-      });
+      let toolTurn = null;
+      try {
+        toolTurn = await orchestrateToolAction({
+          db,
+          userId,
+          profileId,
+          profile: profileRow,
+          patientState: stateRow,
+          history,
+          message,
+          conversationId,
+          pendingFollowupOffer,
+        });
+      } catch (toolError) {
+        console.error('[ToolOrchestrator] Non-fatal chat preflight failed:', {
+          message: toolError?.message,
+          stack: toolError?.stack,
+          profileId,
+          intent: intentResult?.intent,
+        });
 
-      if (toolTurn.handled) {
+        const schedulerIntents = new Set([
+          INTENTS.DIRECT_REMINDER,
+          INTENTS.REMINDER_UPDATE,
+          INTENTS.REMINDER_STATUS,
+          INTENTS.REMINDER_FAILURE,
+          INTENTS.TIMING_RESPONSE,
+          INTENTS.SCHEDULE_ACCEPTANCE,
+          INTENTS.DELEGATE_CHOICE,
+        ]);
+
+        if (schedulerIntents.has(intentResult.intent)) {
+          return saveAssistantAndReturn(db, res, {
+            conversationId,
+            profileId,
+            reply: "I understood that, but I couldn't save or check the schedule just now. Please try once more in a moment.",
+            safety,
+            mode: 'tool_preflight_failed',
+          });
+        }
+      }
+
+      if (toolTurn?.handled) {
         if (toolTurn.extra?.pendingToolAction) {
           await db.run(
             'UPDATE patient_states SET pending_followup_offer_json = ?, updated_at = CURRENT_TIMESTAMP WHERE profile_id = ?',
