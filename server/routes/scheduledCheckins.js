@@ -31,6 +31,42 @@ import {
 
 const router = Router();
 
+// Tiny in-process memo so /reminders and /checkins/notifications polling stops
+// hammering SQLite. Per-user (and per-profile) key with a short TTL.
+const REMINDER_LIST_TTL_MS = 8_000;
+const reminderListCache = new Map();
+
+function getCachedReminderList(cacheKey) {
+  const hit = reminderListCache.get(cacheKey);
+  if (!hit) return null;
+  if (hit.expiresAt < Date.now()) {
+    reminderListCache.delete(cacheKey);
+    return null;
+  }
+  return hit.value;
+}
+
+function setCachedReminderList(cacheKey, value) {
+  reminderListCache.set(cacheKey, { value, expiresAt: Date.now() + REMINDER_LIST_TTL_MS });
+  if (reminderListCache.size > 5000) {
+    // Bound memory growth on a long-lived server.
+    const oldest = reminderListCache.keys().next().value;
+    if (oldest) reminderListCache.delete(oldest);
+  }
+}
+
+export function invalidateReminderListCache({ userId, profileId } = {}) {
+  if (!userId) {
+    reminderListCache.clear();
+    return;
+  }
+  for (const key of reminderListCache.keys()) {
+    if (key.startsWith(`${userId}|`) && (!profileId || key.includes(`|${profileId}|`))) {
+      reminderListCache.delete(key);
+    }
+  }
+}
+
 const RESPONSE_LABELS = {
   yes: 'Yes',
   no: 'No',
@@ -453,8 +489,18 @@ router.get('/checkins/notifications', requireAuth, async (req, res) => {
 
 router.get('/reminders', requireAuth, async (req, res) => {
   try {
-    const db = await getDb();
     const profileId = req.query.profileId || null;
+    const status = req.query.status || 'visible';
+    const limit = parseInt(req.query.limit || '30', 10);
+    const cacheKey = `${req.user.id}|${profileId || '*'}|${status}|${limit}`;
+
+    const cached = getCachedReminderList(cacheKey);
+    if (cached) {
+      res.setHeader('X-Cache', 'HIT');
+      return res.json(cached);
+    }
+
+    const db = await getDb();
     if (profileId) {
       const profile = await db.get('SELECT id FROM profiles WHERE id = ? AND user_id = ?', [
         profileId,
@@ -466,10 +512,12 @@ router.get('/reminders', requireAuth, async (req, res) => {
     const rows = await listReminderItems(db, {
       userId: req.user.id,
       profileId,
-      status: req.query.status || 'visible',
-      limit: parseInt(req.query.limit || '30', 10),
+      status,
+      limit,
     });
 
+    setCachedReminderList(cacheKey, rows);
+    res.setHeader('X-Cache', 'MISS');
     res.json(rows);
   } catch (error) {
     console.error('[Reminders List]', error);
@@ -501,6 +549,7 @@ router.get('/reminders/status', requireAuth, async (req, res) => {
       profileId,
       status: 'active',
       limit: 8,
+      markDue: true,
     });
 
     res.json({ assistantMessage, reminders });
@@ -518,6 +567,7 @@ router.post('/reminders/:reminderId/acknowledge', requireAuth, async (req, res) 
       itemId: req.params.reminderId,
     });
     if (!item) return res.status(404).json({ error: 'Reminder not found' });
+    invalidateReminderListCache({ userId: req.user.id });
     res.json(item);
   } catch (error) {
     console.error('[Reminder Acknowledge]', error);
@@ -533,6 +583,7 @@ router.post('/reminders/:reminderId/dismiss', requireAuth, async (req, res) => {
       itemId: req.params.reminderId,
     });
     if (!item) return res.status(404).json({ error: 'Reminder not found' });
+    invalidateReminderListCache({ userId: req.user.id });
     res.json(item);
   } catch (error) {
     console.error('[Reminder Dismiss]', error);
