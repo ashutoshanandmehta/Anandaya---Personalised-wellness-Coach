@@ -845,6 +845,7 @@ router.post('/:profileId/chat', requireProfileOwnership, async (req, res) => {
     const isCrisisMode = safety.level === 'RED' || safety.level === 'ORANGE';
     const keepPendingOffer = pendingFollowupOffer && intentResult.intent === INTENTS.CLARIFICATION;
 
+    let toolPipelineFailed = false;
     if (!isCrisisMode) {
       let toolTurn = null;
       try {
@@ -860,6 +861,7 @@ router.post('/:profileId/chat', requireProfileOwnership, async (req, res) => {
           pendingFollowupOffer,
         });
       } catch (toolError) {
+        toolPipelineFailed = true;
         console.error('[ToolOrchestrator] Non-fatal chat preflight failed:', {
           message: toolError?.message,
           stack: toolError?.stack,
@@ -914,7 +916,7 @@ router.post('/:profileId/chat', requireProfileOwnership, async (req, res) => {
       }
     }
 
-    if (!isCrisisMode && false) {
+    if (!isCrisisMode) {
       // 1. Direct Reminder Fast Path
       if (intentResult.intent === INTENTS.DIRECT_REMINDER) {
         const directResult = await handleDirectReminder({
@@ -1257,11 +1259,37 @@ router.post('/:profileId/chat', requireProfileOwnership, async (req, res) => {
       profile_summary_text: stateRow?.profile_summary_text || '',
     };
 
+    const reminderShapedIntents = new Set([
+      INTENTS.DIRECT_REMINDER,
+      INTENTS.REMINDER_UPDATE,
+      INTENTS.REMINDER_STATUS,
+      INTENTS.REMINDER_FAILURE,
+      INTENTS.TIMING_RESPONSE,
+      INTENTS.SCHEDULE_ACCEPTANCE,
+      INTENTS.DELEGATE_CHOICE,
+    ]);
+    const reminderIntentReachedLlm = reminderShapedIntents.has(intentResult.intent);
+    const lastAssistantContent = [...history].reverse().find(m => m.role === 'assistant')?.content || '';
+    const recentToolFailureInHistory = /couldn't save or check the schedule|couldn't save that reminder|couldn't save the change in the schedule|tool_preflight_failed/i.test(lastAssistantContent);
+    const additionalGuards = (reminderIntentReachedLlm || toolPipelineFailed || recentToolFailureInHistory)
+      ? [
+          'No reminder, check-in, or schedule has been saved this turn. The scheduling pipeline did not return a confirmed item.',
+          'Do NOT claim, imply, or summarize that any reminder is set, scheduled, saved, queued, or "noted" — even if the prior assistant turn or chat history sounds like one was. Past messages may have referenced a reminder that was never persisted.',
+          'If the user clearly asked for a reminder or accepted a previously offered schedule, tell them honestly: the reminder system is unavailable right now and nothing was saved, and offer to try again in a moment.',
+          'Do not invent a confirmed time, do not say "I\'ll remind you", and do not write any line that starts with "Got it, I\'ll" about a future nudge.',
+        ].join('\n- ')
+      : null;
+    const guardsPayload = additionalGuards ? `- ${additionalGuards}` : null;
+
     console.log('[CHAT SAFETY FLOW]', {
       profileId,
       safetyModeBefore: currentMode,
       safetyLevel: safety.level,
       selectedHandler: 'llm_stream',
+      reminderIntentReachedLlm,
+      toolPipelineFailed,
+      recentToolFailureInHistory,
+      additionalGuardsAttached: Boolean(guardsPayload),
     });
 
     // Send SSE Headers
@@ -1280,6 +1308,7 @@ router.post('/:profileId/chat', requireProfileOwnership, async (req, res) => {
         history,
         patientState: stateForLLM,
         safety,
+        additionalGuards: guardsPayload,
       });
 
       // 2. We can concurrently compute the check-in offer using the old profile
@@ -1321,6 +1350,7 @@ router.post('/:profileId/chat', requireProfileOwnership, async (req, res) => {
           history,
           patientState: stateForLLM,
           safety,
+          additionalGuards: guardsPayload,
         });
         fullReply = fallbackReply;
         followupOffer = null;
