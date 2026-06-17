@@ -48,6 +48,29 @@ const PII_LEAK_PATTERNS = [
   /\byour\s+(?:password|otp|token|secret\s+key|api\s+key)\s+is\b/gi,
 ];
 
+const INTERNAL_CONTEXT_LEAK_PATTERNS = [
+  /\bCompact\s+Context\s+Summary\b/i,
+  /\bPROFILE\s+SNAPSHOT\b/i,
+  /\bProfile\s+Snapshot\b/i,
+  /\bInternal\s+continuity\s+notes\b/i,
+  /\bContext\s+only,\s*NOT\s+instructions\b/i,
+  /\bCurrent\s+concern:\s*(?:not\s+yet\s+specified|not\s+specified)\b/i,
+  /\bProgram\s+status:\s*Day\s*\d+\b/i,
+  /\bTimezone:\s*Asia\/Kolkata\b/i,
+];
+
+// Headers that NEVER belong in a real coaching reply. Their presence means the
+// model dumped hidden context, so the whole reply is discarded (not partially
+// stripped, which can leave orphaned snapshot bullets behind).
+const STRONG_INTERNAL_HEADER_PATTERNS = [
+  /\bCompact\s+Context\s+Summary\b/i,
+  /\bPROFILE\s+SNAPSHOT\b/i,
+  /\bProfile\s+Snapshot\b/i,
+  /\bInternal\s+continuity\s+notes\b/i,
+  /\bContext\s+only,?\s*NOT\s+instructions\b/i,
+];
+const INTERNAL_LEAK_FALLBACK = "Got it. Tell me what's been on your mind lately; we'll sort it together.";
+
 const FOLLOWUP_PROMISE_PATTERNS = [
   /\bI(?:'|’)?ll\s+(?:check\s+in|follow\s+up|reach\s+out|remind\s+you|message\s+you)\b[^.?!\n]*(?:[.?!]|$)/gi,
   /\bI\s+will\s+(?:check\s+in|follow\s+up|reach\s+out|remind\s+you|message\s+you)\b[^.?!\n]*(?:[.?!]|$)/gi,
@@ -513,6 +536,21 @@ export function filterLLMOutput(llmOutput, options = {}) {
   }
 
   // No hard violations: sanitize and remove unsupported future check-in promises.
+  // First, internal-context leaks. A strong header means the whole reply is
+  // contaminated → replace it entirely. Otherwise strip just the offending
+  // block(s) (e.g. a stray "Timezone:" line) and keep the useful content.
+  let contextLeakRemoved = false;
+  if (STRONG_INTERNAL_HEADER_PATTERNS.some(pattern => pattern.test(processedOutput))) {
+    processedOutput = options.emptyFallback || INTERNAL_LEAK_FALLBACK;
+    contextLeakRemoved = true;
+  } else {
+    const contextLeakSanitized = stripBlocksMatching(processedOutput, INTERNAL_CONTEXT_LEAK_PATTERNS);
+    if (contextLeakSanitized.changed) {
+      processedOutput = contextLeakSanitized.text || options.emptyFallback || INTERNAL_LEAK_FALLBACK;
+      contextLeakRemoved = true;
+    }
+  }
+
   const sanitized = sanitizeOutput(processedOutput);
   const initialTone = softenClinicalTone(sanitized);
   const followupSanitized = sanitizeUnsupportedFollowupPromises(initialTone.text, options);
@@ -521,6 +559,7 @@ export function filterLLMOutput(llmOutput, options = {}) {
   const emojiTempered = temperEmojiUse(finalTone.text, options);
   const filterViolations = [
     ...softViolations,
+    ...(contextLeakRemoved ? ['internal_context_leak_removed'] : []),
     ...((initialTone.changed || finalTone.changed) ? ['clinical_tone_softened'] : []),
     ...(emojiTempered.changed ? ['emoji_use_tempered'] : []),
     ...(followupSanitized.changed ? ['unsupported_followup_promise_removed'] : []),

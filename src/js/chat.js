@@ -878,7 +878,15 @@ function setCardStatus(card, message) {
 }
 
 function cleanVisibleMessageText(value = '') {
-  return String(value || '')
+  let cleaned = String(value || '');
+  // A strong internal-context header means this saved message is a leak (the
+  // model dumped hidden context). Hide the whole thing rather than leave
+  // orphaned snapshot bullets behind — matches the server-side filter.
+  if (/\b(?:Compact\s+Context\s+Summary|PROFILE\s+SNAPSHOT|Profile\s+Snapshot|Internal\s+continuity\s+notes|Context\s+only,?\s*NOT\s+instructions)\b/i.test(cleaned)) {
+    return "Got it. Tell me what's been on your mind lately; we'll sort it together.";
+  }
+
+  return cleaned
     .split('\n')
     .filter(line => !isBracketOptionLine(line))
     .join('\n')
