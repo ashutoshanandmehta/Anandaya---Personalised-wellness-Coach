@@ -66,6 +66,24 @@
   --info:               #1268BD;
   --info-soft:          #1F5F9D;
 
+  /* ── Semantic colour vocabulary (migration aliases) ─────────
+     Cleaner names that map onto the canonical tokens above. New/refactored
+     rules should prefer these. They resolve at use-time, so they pick up the
+     html.dark overrides automatically — no need to redefine in dark mode.
+     NOTE: legacy --brand-blue is the warm ORANGE primary, not blue; prefer
+     --color-primary going forward. */
+  --color-bg:            var(--bg);
+  --color-surface:       var(--surface);
+  --color-surface-soft:  var(--surface-soft);
+  --color-border:        var(--border);
+  --color-text:          var(--text-primary);
+  --color-text-muted:    var(--text-muted);
+  --color-primary:       var(--primary);
+  --color-primary-hover: var(--primary-hover);
+  --color-success:       var(--success);
+  --color-warning:       var(--warning);
+  --color-danger:        var(--danger);
+
   /* ── 3rd-party palettes (kept literal on purpose) ─────────── */
   --google-bg:          #FFFFFF;
   --google-text:        #3c4043;
@@ -84,6 +102,11 @@
   --sp-12: 48px;
   --sp-16: 64px;
 
+  /* Layout — single source of truth for the fixed header height. Used by the
+     header itself, the app-layout top padding, and every sidebar/nav that
+     positions itself below the header. Overridden per breakpoint below. */
+  --header-h: 44px;
+
   /* Border radius */
   --r-sm:  8px;
   --r-md:  12px;
@@ -95,7 +118,10 @@
   /* Typography — base sized so 100% browser zoom feels right (was tuned
      too large; users were dropping to 75% to compensate). */
   --font: 'Inter', 'Manrope', system-ui, sans-serif;
-  --font-serif: 'Playfair Display', Georgia, serif;
+  /* One typeface across the whole app: Inter. Headlines differ only by size,
+     subsections only by weight — never by font family. --font-serif is kept as
+     an alias so every existing reference resolves to Inter (no per-rule edits). */
+  --font-serif: var(--font);
   --text-xs:  0.6875rem;   /* 11px */
   --text-sm:  0.75rem;     /* 12px */
   --text-base: 0.8125rem;  /* 13px */
@@ -295,8 +321,10 @@ body {
 }
 .btn-ghost:hover { background: rgba(255,255,255,0.05); color: var(--text-primary); }
 
-/* Text small (inline link-like button) */
-.btn-text {
+/* Text small (inline link-like button). `.btn-text-small` is a legacy alias —
+   shared via a grouped selector (plain CSS has no `composes`). */
+.btn-text,
+.btn-text-small {
   background: transparent;
   border: none;
   color: var(--brand-blue-soft);
@@ -308,10 +336,8 @@ body {
   border-radius: var(--r-sm);
   transition: background var(--t-fast) var(--ease), color var(--t-fast) var(--ease);
 }
-.btn-text:hover { background: var(--brand-blue-dim); color: var(--brand-blue-soft); }
-
-/* Legacy aliases */
-.btn-text-small { composes: btn-text; }
+.btn-text:hover,
+.btn-text-small:hover { background: var(--brand-blue-dim); color: var(--brand-blue-soft); }
 
 /* Google OAuth */
 .btn-google {
@@ -580,7 +606,7 @@ body {
   top: 0;
   left: 0;
   right: 0;
-  height: 56px;
+  height: var(--header-h);
   background: var(--bg);
   border-bottom: 1px solid var(--border-subtle);
   display: flex;
@@ -1113,7 +1139,7 @@ body {
 .app-layout {
   display: flex;
   height: 100dvh;
-  padding-top: 56px; /* header height */
+  padding-top: var(--header-h);
   overflow: hidden;
 }
 
@@ -1447,9 +1473,16 @@ body {
 }
 
 .typing-dots {
-  display: flex;
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  width: 60px;
+  min-width: 60px;
+  height: 36px;
   gap: 5px;
-  padding: 14px 18px;
+  padding: 0 13px;
+  overflow: hidden;
+  box-sizing: border-box;
   background: var(--surface);
   border: 1px solid var(--border-subtle);
   border-radius: var(--r-xl);
@@ -1457,18 +1490,24 @@ body {
 }
 
 .typing-dots span {
-  width: 6px;
-  height: 6px;
+  width: 4.5px;
+  height: 4.5px;
+  min-width: 4.5px;
+  min-height: 4.5px;
+  display: block;
+  flex: 0 0 auto;
   background: var(--text-muted);
   border-radius: 50%;
+  font-size: 0;
+  line-height: 0;
   animation: typing-bounce 1.3s ease-in-out infinite;
 }
 .typing-dots span:nth-child(2) { animation-delay: 0.2s; }
 .typing-dots span:nth-child(3) { animation-delay: 0.4s; }
 
 @keyframes typing-bounce {
-  0%, 60%, 100% { transform: translateY(0); opacity: 0.5; }
-  30% { transform: translateY(-6px); opacity: 1; }
+  0%, 60%, 100% { transform: translateY(0); opacity: 0.7; }
+  30% { transform: translateY(-3px); opacity: 1; }
 }
 
 /* Chat input area */
@@ -1928,7 +1967,7 @@ html.dark .theme-toggle-btn .theme-icon-moon { display: none; }
   .right-sidebar {
     position: fixed;
     right: 0;
-    top: 56px;
+    top: var(--header-h);
     bottom: 0;
     z-index: 50;
     box-shadow: var(--shadow-lg);
@@ -1943,7 +1982,7 @@ html.dark .theme-toggle-btn .theme-icon-moon { display: none; }
   .right-sidebar-toggle {
     position: fixed;
     right: var(--sp-4);
-    top: calc(56px + var(--sp-4));
+    top: calc(var(--header-h) + var(--sp-4));
     left: auto;
     z-index: 30;
     background: var(--surface);
@@ -1968,7 +2007,7 @@ html.dark .theme-toggle-btn .theme-icon-moon { display: none; }
   .left-nav {
     position: fixed;
     left: 0;
-    top: 56px;
+    top: var(--header-h);
     bottom: 0;
     z-index: 50;
     box-shadow: var(--shadow-lg);
@@ -1983,7 +2022,7 @@ html.dark .theme-toggle-btn .theme-icon-moon { display: none; }
   .left-nav-toggle {
     position: fixed;
     left: var(--sp-4);
-    top: calc(56px + var(--sp-4));
+    top: calc(var(--header-h) + var(--sp-4));
     right: auto;
     z-index: 30;
   }
@@ -2568,7 +2607,7 @@ body:has(#mainAppLayout:not(.hidden)) {
 }
 
 .app-header {
-  height: 44px;
+  height: var(--header-h);
   background: var(--bg);
   border-bottom: 1px solid var(--border-subtle);
   box-shadow: 0 1px 0 rgba(87, 64, 48, 0.03);
@@ -2728,7 +2767,7 @@ body:has(#mainAppLayout:not(.hidden)) {
 
 .app-layout {
   height: 100dvh;
-  padding-top: 44px;
+  padding-top: var(--header-h);
   background: var(--bg);
 }
 
@@ -2795,10 +2834,10 @@ body:has(#mainAppLayout:not(.hidden)) {
 
 .day-stepper-label {
   color: var(--text-muted);
-  font-size: 0.78rem;
+  font-size: 0.62rem;
   font-weight: 800;
   text-transform: uppercase;
-  letter-spacing: 0.14em;
+  letter-spacing: 0.1em;
   white-space: nowrap;
 }
 
@@ -2838,8 +2877,8 @@ body:has(#mainAppLayout:not(.hidden)) {
 }
 
 .psb-photo-ring {
-  width: 34px;
-  height: 34px;
+  width: 46px;
+  height: 46px;
 }
 
 .psb-avatar {
@@ -2850,8 +2889,8 @@ body:has(#mainAppLayout:not(.hidden)) {
 }
 
 .psb-photo-edit {
-  width: 20px;
-  height: 20px;
+  width: 16px;
+  height: 16px;
   background: var(--surface);
   border-color: var(--border);
   color: var(--primary);
@@ -2894,8 +2933,8 @@ body:has(#mainAppLayout:not(.hidden)) {
 }
 
 .psb-settings-btn {
-  width: 22px;
-  height: 22px;
+  width: 30px;
+  height: 30px;
   background: var(--surface);
   border: 1px solid var(--border);
   color: var(--text-secondary);
@@ -3138,13 +3177,15 @@ body:has(#mainAppLayout:not(.hidden)) {
 
 .message-content strong {
   color: inherit;
-  font-weight: 800;
+  font-weight: 700;
 }
 
+/* Emphasis stays plain Inter — italic only, same colour and weight as body. */
 .message-content em {
-  color: var(--primary);
-  font-family: var(--font-serif);
-  font-weight: 600;
+  color: inherit;
+  font-family: var(--font);
+  font-style: italic;
+  font-weight: 400;
 }
 
 .message-meta {
@@ -3163,14 +3204,22 @@ body:has(#mainAppLayout:not(.hidden)) {
 }
 
 .typing-dots span {
-  width: 6px;
-  height: 6px;
+  width: 4.5px;
+  height: 4.5px;
+  min-width: 4.5px;
+  min-height: 4.5px;
   display: block;
+  flex: 0 0 auto;
   border-radius: 999px;
   font-size: 0;
   line-height: 0;
   background: var(--primary);
+  /* Re-declare the bounce here so the animation never depends on the base
+     rule surviving the cascade — the appearance and the motion stay together. */
+  animation: typing-bounce 1.3s ease-in-out infinite;
 }
+.typing-dots span:nth-child(2) { animation-delay: 0.2s; }
+.typing-dots span:nth-child(3) { animation-delay: 0.4s; }
 
 .chat-input-area {
   padding: 6px 22px 10px;
@@ -3261,10 +3310,14 @@ body:has(#mainAppLayout:not(.hidden)) {
 
 .input-disclaimer {
   color: var(--text-muted);
-  font-size: 0.72rem;
-  font-weight: 800;
-  letter-spacing: 0.16em;
+  font-size: 0.62rem;
+  font-weight: 700;
+  letter-spacing: 0.03em;
   text-transform: uppercase;
+  white-space: nowrap;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  max-width: 100%;
 }
 
 .interactive-card,
@@ -3625,7 +3678,7 @@ body:has(#mainAppLayout:not(.hidden)) {
     position: fixed;
     left: 0;
     right: auto;
-    top: 44px;
+    top: var(--header-h);
     bottom: 0;
     width: min(400px, calc(100vw - 48px));
     min-width: 0;
@@ -3641,7 +3694,7 @@ body:has(#mainAppLayout:not(.hidden)) {
     position: fixed;
     left: var(--sp-4);
     right: auto;
-    top: calc(44px + var(--sp-4));
+    top: calc(var(--header-h) + var(--sp-4));
     z-index: 45;
   }
 
@@ -3659,13 +3712,15 @@ body:has(#mainAppLayout:not(.hidden)) {
 }
 
 @media (max-width: 768px) {
+  :root { --header-h: 52px; }
+
   .app-header {
-    height: 52px;
+    height: var(--header-h);
     padding: 0 12px;
   }
 
   .app-layout {
-    padding-top: 52px;
+    padding-top: var(--header-h);
   }
 
   .header-brand-icon {
@@ -3787,6 +3842,8 @@ body:has(#mainAppLayout:not(.hidden)) {
    ═══════════════════════════════════════════════════════════════ */
 
 @media (max-width: 640px) {
+  :root { --header-h: 48px; }
+
   html,
   body {
     min-height: 100%;
@@ -3798,7 +3855,7 @@ body:has(#mainAppLayout:not(.hidden)) {
   }
 
   .app-header {
-    height: 48px;
+    height: var(--header-h);
     padding: 0 max(10px, env(safe-area-inset-left)) 0 max(12px, env(safe-area-inset-right));
     gap: 8px;
   }
@@ -3904,7 +3961,7 @@ body:has(#mainAppLayout:not(.hidden)) {
   .app-layout {
     height: 100dvh;
     min-height: 100svh;
-    padding-top: 48px;
+    padding-top: var(--header-h);
   }
 
   .center-pane {
@@ -4048,10 +4105,18 @@ body:has(#mainAppLayout:not(.hidden)) {
   }
 
   .typing-dots {
-    width: 48px;
-    min-width: 48px;
-    height: 30px;
-    gap: 5px;
+    width: 56px;
+    min-width: 56px;
+    height: 34px;
+    gap: 4px;
+    padding: 0 12px;
+  }
+
+  .typing-dots span {
+    width: 4px;
+    height: 4px;
+    min-width: 4px;
+    min-height: 4px;
   }
 
   .message.user .message-content {

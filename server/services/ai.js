@@ -74,9 +74,20 @@ setInterval(() => {
   }
 }, 60000);
 
-function getBestSlot(taskType) {
+// When a task type's dedicated slots are all unhealthy (e.g. a restricted/bad
+// provider key), degrade gracefully to a broader pool instead of failing the
+// whole feature. The `main` models all support JSON output, so planner/summary
+// JSON work can run there as a last resort.
+const TASK_FALLBACKS = {
+  planner: ['planner', 'main'],
+  summary: ['summary', 'main'],
+  main: ['main', 'main_complex'],
+  main_complex: ['main_complex', 'main'],
+};
+
+function pickHealthySlot(taskType) {
   const now = Date.now();
-  let candidateSlots = slots.filter(s => {
+  const candidateSlots = slots.filter(s => {
     if (s.status === 'cooling_down' && now > s.cooldown_until) {
       s.status = 'healthy';
     }
@@ -95,8 +106,33 @@ function getBestSlot(taskType) {
   return candidateSlots[0];
 }
 
-function handleSlotError(slot, error) {
+function getBestSlot(taskType) {
+  const chain = TASK_FALLBACKS[taskType] || [taskType];
+  for (const t of chain) {
+    const slot = pickHealthySlot(t);
+    if (slot) return slot;
+  }
+  return null;
+}
+
+function countSlotsForTask(taskType) {
+  const chain = TASK_FALLBACKS[taskType] || [taskType];
+  const names = new Set();
+  for (const t of chain) {
+    for (const slot of slots) {
+      if (slot.task_type === t || slot.task_type.startsWith(t)) {
+        names.add(slot.slot_name);
+      }
+    }
+  }
+  return names.size;
+}
+
+function handleSlotError(slot, error, taskType) {
   const status = error?.status;
+  const message = String(error?.message || '');
+  slot.failure_count = (slot.failure_count || 0) + 1;
+
   if (status === 429) {
     // Rate limited. Cool down this slot only.
     slot.status = 'cooling_down';
@@ -105,13 +141,34 @@ function handleSlotError(slot, error) {
   } else if (status >= 500) {
     slot.status = 'cooling_down';
     slot.cooldown_until = Date.now() + 30000;
+  } else if (status === 400 || status === 401 || status === 403) {
+    // Persistent config/auth failure for THIS slot's key or model — e.g.
+    // `organization_restricted`, a revoked key, or a model the org can't access.
+    // Retrying the same slot is pointless and starves the other slots, so
+    // disable it for a long while and let the scheduler fail over to a healthy
+    // slot (this is what restored profile extraction + the tool planner when
+    // one provider key was restricted).
+    slot.status = 'cooling_down';
+    slot.cooldown_until = Date.now() + 15 * 60000; // 15 min
+    console.warn(`[AI Slot Scheduler] ${status} on ${slot.slot_name} (${slot.model}) — disabling 15 min, failing over.`);
+  } else if (taskType === 'planner' && /json|parse|unexpected token|parseable/i.test(message)) {
+    // Invalid JSON is a planner-slot failure for this request. Cool it briefly
+    // so the scheduler can try the next planner/main fallback instead of
+    // asking the same model for the same malformed shape again.
+    slot.status = 'cooling_down';
+    slot.cooldown_until = Date.now() + 30000;
+    console.warn(`[AI Slot Scheduler] Invalid JSON from ${slot.slot_name} (${slot.model}) — cooling 30s, failing over.`);
   }
 }
 
 async function executeWithSlot(taskType, runner, estimatedTokens) {
-  for (let attempt = 0; attempt < 3; attempt++) {
+  const maxAttempts = Math.max(3, countSlotsForTask(taskType) + 1);
+  let lastError = null;
+
+  for (let attempt = 0; attempt < maxAttempts; attempt++) {
     const slot = getBestSlot(taskType);
     if (!slot) {
+      if (lastError) break;
       throw new Error(`No healthy slots available for ${taskType}. System degraded.`);
     }
 
@@ -124,17 +181,67 @@ async function executeWithSlot(taskType, runner, estimatedTokens) {
       slot.active_requests--;
       return result;
     } catch (error) {
+      lastError = error;
       slot.active_requests--;
-      handleSlotError(slot, error);
+      console.error(`[AI Slot] ${taskType}/${slot.slot_name} (${slot.model}) failed:`, error?.status, error?.message);
+      handleSlotError(slot, error, taskType);
     }
   }
-  throw new Error(`All attempts failed for ${taskType}`);
+  throw new Error(`All attempts failed for ${taskType}: ${lastError?.message || 'unknown error'}`);
 }
 
 // ── Invalid JSON Auto-Repair ───────────────────────────────────────
+// Robustly extract a JSON value from a model's raw text. Handles three things
+// that broke the naive `JSON.parse`:
+//   1. Reasoning models (Qwen3) emit <think>…</think> before the JSON.
+//   2. Models wrap output in ```json … ``` fences (anywhere, not just leading).
+//   3. Stray prose before/after the JSON — we fall back to the first balanced
+//      {…} or […] block.
 function parseMaybeJson(text) {
-  const trimmed = String(text || '').trim().replace(/^```json/i, '').replace(/^```/, '').replace(/```$/, '').trim();
-  return JSON.parse(trimmed);
+  let s = String(text || '');
+  // Drop closed reasoning blocks, then any unterminated trailing <think>.
+  s = s.replace(/<think>[\s\S]*?<\/think>/gi, '').replace(/<think>[\s\S]*$/i, '');
+  // Strip markdown code fences wherever they appear.
+  s = s.replace(/```(?:json)?/gi, '').replace(/```/g, '').trim();
+
+  try {
+    return JSON.parse(s);
+  } catch {
+    const extracted = extractFirstJson(s);
+    if (extracted !== null) return extracted;
+    throw new SyntaxError('No parseable JSON found in model output');
+  }
+}
+
+// Scan for the first balanced {…} or […], respecting strings/escapes.
+function extractFirstJson(s) {
+  for (let start = 0; start < s.length; start++) {
+    const open = s[start];
+    if (open !== '{' && open !== '[') continue;
+
+    const close = open === '{' ? '}' : ']';
+    let depth = 0;
+    let inStr = false;
+    let esc = false;
+    for (let i = start; i < s.length; i++) {
+      const c = s[i];
+      if (inStr) {
+        if (esc) esc = false;
+        else if (c === '\\') esc = true;
+        else if (c === '"') inStr = false;
+        continue;
+      }
+      if (c === '"') inStr = true;
+      else if (c === open) depth++;
+      else if (c === close) {
+        depth--;
+        if (depth === 0) {
+          try { return JSON.parse(s.slice(start, i + 1)); } catch { break; }
+        }
+      }
+    }
+  }
+  return null;
 }
 
 export async function generateJSON(systemInstruction, userPrompt) {

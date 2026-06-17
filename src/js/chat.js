@@ -391,6 +391,28 @@ function scrollToBottom() {
   chatMessages.scrollTop = chatMessages.scrollHeight;
 }
 
+async function refreshPatientState(profileId = appState.activeProfileId) {
+  if (!profileId) return;
+  try {
+    const state = await apiClient.get(`/api/profiles/${profileId}/state`);
+    if (profileId !== appState.activeProfileId) return;
+    appState.patientState = state;
+    renderProfileData();
+  } catch (e) {
+    console.warn('Failed to refresh patient state', e);
+  }
+}
+
+function schedulePatientStateRefreshes(profileId = appState.activeProfileId) {
+  refreshPatientState(profileId);
+  // Profile extraction and summary updates run as background jobs after the
+  // assistant response is saved. These delayed pulls let the sidebar catch the
+  // newly persisted basic details/goals without requiring another user turn.
+  [3500, 8500, 15000].forEach(delay => {
+    window.setTimeout(() => refreshPatientState(profileId), delay);
+  });
+}
+
 async function triggerCheckIn() {
   try {
     showAutosave('saving');
@@ -523,7 +545,16 @@ async function submitMessage(text, { resetInput = false } = {}) {
               ...meta
             });
             
-            if (meta.uiActions && meta.uiActions.some(a => a.type === 'show_checkin_offer')) {
+            // Refresh reminders/notifications immediately when this turn
+            // actually created or changed a scheduled item — so the sidebar
+            // and notification panel reflect it without waiting for the 30s poll.
+            const createdSchedule =
+              (Array.isArray(meta.scheduledCheckins) && meta.scheduledCheckins.length > 0) ||
+              Boolean(meta.reminder) ||
+              (meta.uiActions && meta.uiActions.some(a => a.type === 'show_checkin_offer'));
+            if (createdSchedule) {
+              // notifications:refresh fans out to loadActiveReminders(), which
+              // re-fetches /api/reminders and re-renders the sidebar module.
               window.dispatchEvent(new CustomEvent('notifications:refresh'));
             }
           }
@@ -537,14 +568,7 @@ async function submitMessage(text, { resetInput = false } = {}) {
       }
     }
 
-    // Refresh memory asynchronously
-    apiClient.get(`/api/profiles/${appState.activeProfileId}/state`)
-      .then(updatedState => {
-        if (updatedState) {
-          appState.patientState = updatedState;
-          renderProfileData();
-        }
-      }).catch(e => console.warn('Failed to refresh patient state', e));
+    schedulePatientStateRefreshes(appState.activeProfileId);
 
     showAutosave('saved');
   } catch (err) {
