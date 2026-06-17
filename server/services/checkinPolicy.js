@@ -30,50 +30,50 @@ const TYPE_COPY = {
   [CHECKIN_TYPES.SLEEP_DAILY]: {
     title: 'Sleep check-in',
     cadence: 'daily',
-    selfQuestion: 'Shall we check in tomorrow to see how your sleep went?',
-    otherQuestion: (name) => `Would you like me to check in tomorrow about ${name}'s sleep target and how rested they seemed?`,
+    selfQuestion: 'Would a sleep check-in help? What specific time should I check in tomorrow — for example 8 AM, 9:30 AM, or after you usually wake up?',
+    otherQuestion: (name) => `Would a sleep check-in for ${name} help? What specific time should I check in tomorrow — for example 8 AM, 9:30 AM, or after ${name} usually wakes up?`,
   },
   [CHECKIN_TYPES.WATER_2_HOURLY]: {
     title: 'Hydration check-in',
     cadence: 'every_2_hours',
-    selfQuestion: 'Would you like some gentle hydration reminders throughout the day, or just one check-in?',
-    otherQuestion: (name) => `Would you like gentle hydration check-ins for ${name} every 2 hours during waking hours, or one daily check-in?`,
+    selfQuestion: 'Would hydration check-ins help? What specific window should I use — for example every 2 hours from 10 AM to 8 PM, or one check-in at 6 PM?',
+    otherQuestion: (name) => `Would hydration check-ins for ${name} help? What specific window should I use — for example every 2 hours from 10 AM to 8 PM, or one check-in at 6 PM?`,
   },
   [CHECKIN_TYPES.NUTRITION_MEAL]: {
     title: 'Nutrition check-in',
     cadence: 'meal_based',
-    selfQuestion: 'Would you like a quick check-in after your main meal to see how it went?',
-    otherQuestion: (name) => `Would you like me to check in after ${name}'s main meal to see whether the nutrition plan felt manageable?`,
+    selfQuestion: 'Would a meal check-in help? What specific time should I check in — for example after lunch, around 8 PM, or 30 minutes after dinner?',
+    otherQuestion: (name) => `Would a meal check-in for ${name} help? What specific time should I check in — for example after lunch, around 8 PM, or 30 minutes after dinner?`,
   },
   [CHECKIN_TYPES.RECOVERY_DAILY]: {
     title: 'Recovery check-in',
     cadence: 'daily',
-    selfQuestion: 'Shall we check in tomorrow to track how your recovery is progressing?',
-    otherQuestion: (name) => `Would you like me to check in tomorrow to track whether ${name}'s symptoms, hydration, and food tolerance are improving?`,
+    selfQuestion: 'Would a small recovery check-in help? What specific time should I check in — like tonight at 9 PM, tomorrow morning, or after you try the comfort step?',
+    otherQuestion: (name) => `Would a small recovery check-in for ${name} help? What specific time should I check in — like tonight at 9 PM, tomorrow morning, or after ${name} tries the comfort step?`,
   },
   [CHECKIN_TYPES.EXERCISE_FOLLOWUP]: {
     title: 'Exercise check-in',
     cadence: 'after_next_workout_or_daily',
-    selfQuestion: 'Would you like me to check in after your next workout to see how it felt?',
-    otherQuestion: (name) => `Would you like me to check in after ${name}'s next workout or tomorrow to see how the plan felt?`,
+    selfQuestion: 'Would a movement check-in help? What specific time should I check in — for example after your walk, 7 PM, or tomorrow morning?',
+    otherQuestion: (name) => `Would a movement check-in for ${name} help? What specific time should I check in — for example after the walk, 7 PM, or tomorrow morning?`,
   },
   [CHECKIN_TYPES.STRESS_DAILY]: {
     title: 'Stress check-in',
     cadence: 'daily',
-    selfQuestion: 'Shall we check in tomorrow to see how your stress-support step felt?',
-    otherQuestion: (name) => `Would you like me to check in tomorrow to see whether ${name}'s stress-support step felt manageable?`,
+    selfQuestion: 'Would a gentle stress check-in help? What specific time should I check in — tonight, tomorrow morning, or a time like 8 PM?',
+    otherQuestion: (name) => `Would a gentle stress check-in for ${name} help? What specific time should I check in — tonight, tomorrow morning, or a time like 8 PM?`,
   },
   [CHECKIN_TYPES.HABIT_DAILY]: {
     title: 'Habit check-in',
     cadence: 'daily',
-    selfQuestion: 'Shall we check in tomorrow to see if your habit target felt realistic?',
-    otherQuestion: (name) => `Would you like me to check in tomorrow to see whether ${name}'s habit target felt realistic?`,
+    selfQuestion: 'Would a habit check-in help? What specific time should I check in — for example 9 PM, tomorrow morning, or after the habit usually happens?',
+    otherQuestion: (name) => `Would a habit check-in for ${name} help? What specific time should I check in — for example 9 PM, tomorrow morning, or after the habit usually happens?`,
   },
   [CHECKIN_TYPES.GENERAL]: {
     title: 'Wellness check-in',
     cadence: 'daily',
-    selfQuestion: 'Would you like a check-in tomorrow, or would you prefer to reach out on your own?',
-    otherQuestion: (name) => `Would you like a check-in tomorrow for ${name}, or would you prefer to reach out only when you need help?`,
+    selfQuestion: 'Would a small check-in help? What specific time should I check in — for example tonight at 9 PM, tomorrow morning, or after you try this once?',
+    otherQuestion: (name) => `Would a small check-in for ${name} help? What specific time should I check in — for example tonight at 9 PM, tomorrow morning, or after they try this once?`,
   },
 };
 
@@ -215,8 +215,8 @@ export function buildCheckinOffer({ message, profile, patientState, updatedProfi
   const oneTime = explicitCheckinRequest && !updatedProfile?.program_duration_days;
   const question = oneTime
     ? (relation === 'self'
-        ? 'We can set that check-in. Should we schedule it?'
-        : `We can set that check-in for ${profileName}. Should we schedule it?`)
+        ? 'We can set that check-in. What specific time should I use? You can say “tonight at 9 PM,” “tomorrow morning,” or “after dinner.”'
+        : `We can set that check-in for ${profileName}. What specific time should I use? You can say “tonight at 9 PM,” “tomorrow morning,” or “after dinner.”`)
     : buildWarmScheduleOfferText({ offer: { ...copy, type }, profile });
   const timeZone = getScheduleTimeZone({ profile, patientState, updatedProfile });
   const scheduledFor = explicitCheckinRequest

@@ -5,12 +5,16 @@ import { resolveTimeZone } from './timeService.js';
 import {
   buildReminderFollowupCheckin,
   buildEngagementCheckinRecord,
+  planEngagementCheckin,
   inferCheckinTaxonomy,
   getTaxonomyPolicy,
 } from './checkinEngagementEngine.js';
 
 const ACTIVE_STATUSES = ['scheduled', 'due', 'sent'];
 const VISIBLE_STATUSES = ['scheduled', 'due', 'sent', 'completed', 'missed'];
+const AUTO_ENGAGEMENT_CHECKINS_ENABLED = String(process.env.ENABLE_AUTO_ENGAGEMENT_CHECKINS || '').toLowerCase() === 'true';
+const ENGAGEMENT_IDLE_MINUTES = Math.max(10, Number(process.env.ENGAGEMENT_IDLE_MINUTES || 180));
+const ENGAGEMENT_COOLDOWN_MINUTES = Math.max(10, Number(process.env.ENGAGEMENT_COOLDOWN_MINUTES || 180));
 
 export function safeJson(value, fallback = {}) {
   try {
@@ -439,6 +443,10 @@ export async function activateTriggeredCheckins(db, { userId = null, profileId =
 }
 
 export async function createDueEngagementCheckins(db, { userId = null, profileId = null, limit = 10 } = {}) {
+  if (!AUTO_ENGAGEMENT_CHECKINS_ENABLED) {
+    return { changes: 0, skipped: 'auto_engagement_checkins_disabled' };
+  }
+
   const params = [];
   const clauses = [];
 
@@ -457,9 +465,15 @@ export async function createDueEngagementCheckins(db, { userId = null, profileId
   const rows = await db.all(`
     SELECT p.*,
            ps.structured_profile_json,
+           ps.profile_summary_text,
            ps.timezone,
            ps.created_at AS state_created_at,
            ps.updated_at AS state_updated_at,
+           (
+             SELECT MAX(m.created_at)
+             FROM messages m
+             WHERE m.profile_id = p.id
+           ) AS last_chat_at,
            (
              SELECT MAX(COALESCE(sc.completed_at, sc.updated_at))
              FROM scheduled_checkins sc
@@ -493,9 +507,25 @@ export async function createDueEngagementCheckins(db, { userId = null, profileId
 
     const structured = safeJson(row.structured_profile_json, {});
     const profile = { ...row, ...structured };
+    const concernText = [
+      structured.current_concern,
+      structured.concern,
+      structured.concern_summary,
+      structured.category,
+      structured.primaryCategory,
+      row.category,
+      row.profile_summary_text,
+      ...(Array.isArray(structured.goals) ? structured.goals : []),
+      ...(Array.isArray(structured.conditions) ? structured.conditions : []),
+    ].filter(Boolean).join(' ').trim();
+    if (!concernText) continue;
+
     const taxonomy = inferCheckinTaxonomy({
       title: [
         structured.category,
+        structured.concern,
+        structured.concern_summary,
+        row.profile_summary_text,
         ...(Array.isArray(structured.goals) ? structured.goals : []),
         ...(Array.isArray(structured.conditions) ? structured.conditions : []),
       ].join(' '),
@@ -503,19 +533,34 @@ export async function createDueEngagementCheckins(db, { userId = null, profileId
       profile,
     });
     const policy = getTaxonomyPolicy(taxonomy);
-    const thresholdMs = policy.engagementHours * 60 * 60 * 1000;
+    const thresholdMs = ENGAGEMENT_IDLE_MINUTES * 60 * 1000;
+    const cooldownMs = Math.max(ENGAGEMENT_COOLDOWN_MINUTES, Math.min(policy.engagementHours * 60, 720)) * 60 * 1000;
     const lastProgressAt = parseDateMs(row.last_progress_at || row.state_created_at || row.created_at);
+    const lastChatAt = parseDateMs(row.last_chat_at || row.state_updated_at || row.state_created_at || row.created_at);
     const lastEngagementAt = parseDateMs(row.last_engagement_at);
 
-    if (!lastProgressAt || now - lastProgressAt < thresholdMs) continue;
-    if (lastEngagementAt && now - lastEngagementAt < thresholdMs) continue;
+    if (!lastChatAt || now - lastChatAt < thresholdMs) continue;
+    if (lastProgressAt && now - lastProgressAt < thresholdMs) continue;
+    if (lastEngagementAt && now - lastEngagementAt < cooldownMs) continue;
+
+    const engagementPlan = await planEngagementCheckin({
+      profile,
+      patientState: row,
+      taxonomy,
+      idleMinutes: Math.round((now - lastChatAt) / 60_000),
+      timeZone: row.timezone,
+    });
+    if (!engagementPlan?.shouldSchedule) continue;
+
+    const scheduledFor = new Date(now + engagementPlan.delayMinutes * 60_000).toISOString();
 
     const record = await buildEngagementCheckinRecord({
       userId: row.user_id,
       profile,
       patientState: row,
       taxonomy,
-      scheduledFor: new Date().toISOString(),
+      scheduledFor,
+      engagementPlan,
     });
     await insertScheduledCheckin(db, record);
     changes += 1;
@@ -523,7 +568,14 @@ export async function createDueEngagementCheckins(db, { userId = null, profileId
       userId: row.user_id,
       profileId: row.id,
       action: 'engagement_checkin_created',
-      metadata: { checkinId: record.id, taxonomy, thresholdHours: policy.engagementHours },
+      metadata: {
+        checkinId: record.id,
+        taxonomy,
+        idleMinutes: Math.round((now - lastChatAt) / 60_000),
+        scheduledFor,
+        delayMinutes: engagementPlan.delayMinutes,
+        plannerReason: engagementPlan.reason,
+      },
     });
   }
 

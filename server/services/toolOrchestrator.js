@@ -257,6 +257,7 @@ Your job:
 - If the user wants ordinary coaching or health conversation, return {"actions": [{"action":"respond"}]} so the main wellness engine can answer.
 - If a tool action is missing required fields, return {"actions": [{"action":"ask_clarification", "missingFields":[...], "clarificationQuestion":"..."}]}.
 - If the user says "yes", "go ahead", or agrees to a schedule/plan previously proposed by the assistant in the recent chat history, READ the assistant's previous message and extract ALL the agreed-upon reminders or check-ins into multiple "create_reminder" or "create_checkin" actions.
+- If the previous assistant message offered a check-in and the current user message only provides timing (for example "tonight", "tomorrow morning", "after dinner", "9 pm"), create a create_checkin action using the previous concern/context as the title and the user's timing as timeSpec. If timing is still vague, ask one warm clarification.
 - You may return multiple actions if the plan requires multiple times (e.g., Morning, Evening, Night).
 - If the user asks to "check", "check in", "ask later how X is", or follow up on a symptom/habit/state, prefer create_checkin, not create_reminder.
 - Use create_reminder for action nudges ("do/take/drink/cook/start this at time"). Use create_checkin for progress/status questions ("how is stomach", "did sleep improve", "ask whether it happened").
@@ -535,7 +536,10 @@ async function executeToolAction({
 
     const dueAt = resolveActionDueAt(action, timeZone);
     if (!dueAt) {
-      return clarificationResult(action, 'What time should I use for this? You can say it casually, like “tomorrow at 9 AM” or “after 30 minutes.”');
+      const question = action.action === 'create_checkin'
+        ? 'Sure — what specific time should I check in? You can say it casually, like “9 PM,” “tomorrow morning,” or “after dinner.”'
+        : 'What specific time should I use for this reminder? You can say it casually, like “tomorrow at 9 AM” or “after 30 minutes.”';
+      return clarificationResult(action, question);
     }
 
     if (new Date(dueAt).getTime() <= Date.now()) {

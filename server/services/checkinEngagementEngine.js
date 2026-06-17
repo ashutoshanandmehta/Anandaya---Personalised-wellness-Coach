@@ -1,5 +1,5 @@
 import { v4 as uuidv4 } from 'uuid';
-import { generateMainText } from './ai.js';
+import { generateJSON, generateMainText } from './ai.js';
 import { resolveTimeZone } from './timeService.js';
 
 const RESPONSE_OPTIONS = ['yes', 'no', 'partially', 'faced_issue'];
@@ -114,6 +114,82 @@ export function inferCheckinTaxonomy({ title = '', type = '', metadata = {}, pro
 
 export function getTaxonomyPolicy(taxonomy = 'general') {
   return TAXONOMY[taxonomy] || TAXONOMY.general;
+}
+
+export async function planEngagementCheckin({
+  profile = {},
+  patientState = {},
+  taxonomy = 'general',
+  idleMinutes = 2,
+  timeZone,
+} = {}) {
+  const policy = getTaxonomyPolicy(taxonomy);
+  const profileName = profile?.name || 'the profile';
+  const structured = patientState?.structured_profile_json
+    ? safeJson(patientState.structured_profile_json, {})
+    : patientState?.structured_profile || patientState || {};
+  const profileSummary = String(patientState?.profile_summary_text || '').trim();
+  const concernText = [
+    structured.current_concern,
+    structured.concern,
+    structured.concern_summary,
+    structured.category,
+    structured.primaryCategory,
+    profile.category,
+    profile.current_concern,
+    profileSummary,
+    ...(Array.isArray(structured.goals) ? structured.goals : []),
+    ...(Array.isArray(structured.conditions) ? structured.conditions : []),
+  ].filter(Boolean).join('; ');
+
+  const fallbackDelay = Math.max(5, Math.min(policy.engagementHours * 60, 45));
+  const fallback = {
+    shouldSchedule: Boolean(concernText.trim()),
+    delayMinutes: fallbackDelay,
+    titleHint: `${policy.title} ${policy.emoji}`,
+    bodyHint: policy.body,
+    cardHint: policy.question,
+    reason: 'taxonomy_fallback',
+  };
+
+  if (!concernText.trim()) return { ...fallback, shouldSchedule: false, reason: 'no_profile_concern' };
+
+  try {
+    const systemInstruction = `You are Anandaya's hidden engagement planner.
+Decide whether to schedule one gentle in-app check-in for a profile that has gone quiet.
+Return JSON only. Do not write user-facing prose.
+The check-in should be warm, friendly, lightly witty when appropriate, and medically safe.
+Choose a delay based on concern urgency and usefulness.
+For medicine, never mention dosage changes. Only ask if the prescribed/reminder step happened.
+Use sparse relevant emoji, 0-1 total in each text field.
+JSON shape:
+{
+  "shouldSchedule": true,
+  "delayMinutes": 15,
+  "titleHint": "short notification title",
+  "bodyHint": "short notification body",
+  "cardHint": "one warm in-app check-in question",
+  "reason": "short internal reason"
+}`;
+    const prompt = JSON.stringify({
+      profileName,
+      relation: profile?.relation || 'self',
+      taxonomy,
+      idleMinutes,
+      timezone: timeZone || resolveTimeZone(patientState?.timezone, profile?.timezone),
+      concernText,
+      profileSummary,
+      basics: {
+        age: structured.age || profile.age,
+        sex: structured.sex || profile.sex,
+      },
+    }, null, 2);
+    const plan = await generateJSON(systemInstruction, prompt);
+    return normalizeEngagementPlan(plan, fallback, taxonomy);
+  } catch (error) {
+    console.warn('[EngagementPlanner] Planner failed, using fallback:', error.message);
+    return normalizeEngagementPlan(fallback, fallback, taxonomy);
+  }
 }
 
 export async function buildReminderFollowupCheckin({ parentRecord, profile = {} } = {}) {
@@ -233,15 +309,18 @@ export async function buildEngagementCheckinRecord({
   patientState = {},
   taxonomy = 'general',
   scheduledFor = new Date().toISOString(),
+  engagementPlan = {},
 } = {}) {
   const timeZone = resolveTimeZone(patientState?.timezone, profile?.timezone);
   const copy = await buildCheckinCopy({
     source: 'engagement',
     taxonomy,
     profile,
-    taskTitle: 'progress update',
+    taskTitle: engagementPlan?.titleHint || engagementPlan?.bodyHint || 'progress update',
     timeZone,
+    plannerHints: engagementPlan,
   });
+  const isFuture = new Date(scheduledFor).getTime() > Date.now() + 1000;
 
   return {
     id: uuidv4(),
@@ -250,7 +329,7 @@ export async function buildEngagementCheckinRecord({
     goalId: null,
     relation: isSelfProfile(profile) ? 'self' : 'other',
     type: `${taxonomy}_engagement_checkin`,
-    status: 'due',
+    status: isFuture ? 'scheduled' : 'due',
     scheduledFor,
     title: copy.title,
     pushTitle: copy.pushTitle,
@@ -266,6 +345,8 @@ export async function buildEngagementCheckinRecord({
       kind: 'checkin',
       checkinSource: 'engagement',
       triggerCondition: 'profile_progress_inactive',
+      plannerReason: engagementPlan?.reason || null,
+      plannedDelayMinutes: engagementPlan?.delayMinutes || null,
       tone: 'warm_witty',
       emoji: copy.emoji,
       taxonomy,
@@ -283,6 +364,7 @@ export async function buildCheckinCopy({
   profile = {},
   taskTitle = '',
   timeZone,
+  plannerHints = {},
 } = {}) {
   const policy = getTaxonomyPolicy(taxonomy);
   const profileName = profile?.name || 'you';
@@ -310,6 +392,9 @@ Task/context: ${taskTitle}
 Profile context: ${profileContext}
 Due timezone: ${timeZone || 'Asia/Kolkata'}
 Emoji: ${policy.emoji}
+Planner title hint: ${plannerHints?.titleHint || 'none'}
+Planner body hint: ${plannerHints?.bodyHint || 'none'}
+Planner card hint: ${plannerHints?.cardHint || 'none'}
 Fallback title: ${fallback.title}
 Fallback body: ${fallback.body}
 Fallback card: ${fallback.card}
@@ -427,6 +512,33 @@ function parseCopyText(text = '') {
   const card = text.match(/^CARD:\s*([\s\S]+)$/im)?.[1]?.trim();
   if (!title || !body || !card) return null;
   return { title, body, card };
+}
+
+function normalizeEngagementPlan(plan = {}, fallback = {}, taxonomy = 'general') {
+  const policy = getTaxonomyPolicy(taxonomy);
+  const rawDelay = Number(plan?.delayMinutes);
+  const maxDelay = taxonomy === 'recovery' || taxonomy === 'medicine' ? 180 : 720;
+  const minDelay = taxonomy === 'medicine' ? 3 : 5;
+  const delayMinutes = Number.isFinite(rawDelay)
+    ? Math.max(minDelay, Math.min(Math.round(rawDelay), maxDelay))
+    : fallback.delayMinutes;
+
+  return {
+    shouldSchedule: plan?.shouldSchedule !== false && fallback.shouldSchedule !== false,
+    delayMinutes,
+    titleHint: limitText(plan?.titleHint || fallback.titleHint || `${policy.title} ${policy.emoji}`, 90),
+    bodyHint: limitText(plan?.bodyHint || fallback.bodyHint || policy.body, 150),
+    cardHint: limitText(plan?.cardHint || fallback.cardHint || policy.question, 400),
+    reason: limitText(plan?.reason || fallback.reason || 'engagement_planner', 120),
+  };
+}
+
+function safeJson(value, fallback = {}) {
+  try {
+    return value ? JSON.parse(value) : fallback;
+  } catch {
+    return fallback;
+  }
 }
 
 function isSelfProfile(profile = {}) {
