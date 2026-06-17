@@ -71,6 +71,21 @@ const FALSE_SCHEDULING_CONFIRMATION_PATTERNS = [
   /\bI\s+don(?:'|’)t\s+have\s+the\s+capability\s+to\s+set\s+reminders\b/gi,
   /\bjust\s+a\s+simulation\b/gi,
   /\bI\s+did\s+not\s+actually\s+set\s+a\s+reminder\b/gi,
+  // ── Alarm-specific false confirmations (the observed bedtime/wake-up bug) ──
+  /\byour\s+(?:[\w'-]+\s+){0,3}alarms?\s+(?:is|are|has\s+been|have\s+been)\s+set\b/gi,
+  /\b(?:bedtime|wake-?up|morning|sleep|lights?-?out)\s+alarms?\s+(?:is|are|has\s+been|have\s+been)\s+set\b/gi,
+  /\balarms?\s+(?:is|are|has\s+been|have\s+been)\s+(?:set|scheduled|created|saved)\b/gi,
+  /\bscheduled\s+(?:for|at)\s+\d/gi,
+  // ── "I'll forward / pass / create / note" hand-off hallucinations ──
+  /\bI(?:'|’)?ll\s+forward\s+(?:the|your|this|these)\b[^.?!\n]*(?:[.?!]|$)/gi,
+  /\bI\s+will\s+forward\s+(?:the|your|this|these)\b[^.?!\n]*(?:[.?!]|$)/gi,
+  /\bI(?:'|’)?ll\s+pass\s+(?:these|those|your|the)\s+times?\b[^.?!\n]*(?:[.?!]|$)/gi,
+  /\bI(?:'|’)?ll\s+(?:create|note|add|set\s+up)\s+(?:them|these|those|it|both)\b[^.?!\n]*(?:[.?!]|$)/gi,
+  /\bI\s+will\s+(?:create|note|add|set\s+up)\s+(?:them|these|those|it|both)\b[^.?!\n]*(?:[.?!]|$)/gi,
+  /\bI(?:'|’)?ve\s+set\b[^.?!\n]*(?:[.?!]|$)/gi,
+  /\bI\s+have\s+set\b[^.?!\n]*(?:[.?!]|$)/gi,
+  /\bonce\s+the\s+system\s+confirms\b[^.?!\n]*(?:[.?!]|$)/gi,
+  /\b(?:they|it)\s+should\s+(?:appear|show\s+up)\s+in\s+the\s+(?:left\s+|right\s+)?sidebar\b[^.?!\n]*(?:[.?!]|$)/gi,
 ];
 
 const ROUTINE_DISCLAIMER_PATTERNS = [
@@ -207,6 +222,15 @@ const SAFE_FALLBACK =
   "We can keep this supportive and safe, but I want to make sure you get the right guidance. " +
   "For specific medical questions or medication concerns, please consult your doctor or a qualified healthcare professional. " +
   "What should we focus on next? 🌿";
+
+// Honest reply used when the LLM tries to confirm a reminder/alarm on a turn
+// where no tool action actually saved anything. Routes the user back to the
+// deterministic scheduler instead of leaving a fabricated confirmation.
+const HONEST_NO_SCHEDULE_REPLY =
+  "I haven't actually saved any alarms or reminders yet — I don't want to say something is set when it isn't. " +
+  "Tell me the exact time (for sleep, a bedtime and a wake-up time like \"10 PM and 6 AM\") and I'll create them right now.";
+
+export { HONEST_NO_SCHEDULE_REPLY };
 
 // ── Mild sanitization (strip markdown injection attempts) ───────
 
@@ -436,9 +460,11 @@ export function filterLLMOutput(llmOutput, options = {}) {
   }
 
   // Check false scheduling confirmations (LLM should not confirm reminders)
+  let falseSchedulingMatched = false;
   for (const pattern of FALSE_SCHEDULING_CONFIRMATION_PATTERNS) {
     pattern.lastIndex = 0;
     if (pattern.test(llmOutput)) {
+      falseSchedulingMatched = true;
       violations.push('false_scheduling_confirmation');
       break;
     }
@@ -448,6 +474,8 @@ export function filterLLMOutput(llmOutput, options = {}) {
   const hardViolations = violations.filter(v => v !== 'false_scheduling_confirmation');
   const softViolations = violations.filter(v => v === 'false_scheduling_confirmation');
 
+  // Hard safety violations take precedence over everything else, including the
+  // scheduling guard — never let an alarm hand-off swallow a safety fallback.
   if (hardViolations.length > 0) {
     console.warn('[PostGenerationFilter] BLOCKED LLM output. Violations:', hardViolations);
     console.warn('[PostGenerationFilter] Original (first 200 chars):', llmOutput.substring(0, 200));
@@ -455,6 +483,20 @@ export function filterLLMOutput(llmOutput, options = {}) {
       safe: false,
       cleaned: SAFE_FALLBACK,
       violations: hardViolations,
+      original_preview: llmOutput.substring(0, 200),
+    };
+  }
+
+  // schedulingForbidden: this turn must NOT confirm any reminder/alarm because
+  // no tool action saved anything. Stripping a sentence is not enough here —
+  // replace the whole reply with an honest message so nothing implies success.
+  if (options.schedulingForbidden && falseSchedulingMatched) {
+    console.warn('[PostGenerationFilter] BLOCKED false scheduling confirmation (schedulingForbidden turn).');
+    console.warn('[PostGenerationFilter] Original (first 200 chars):', llmOutput.substring(0, 200));
+    return {
+      safe: false,
+      cleaned: HONEST_NO_SCHEDULE_REPLY,
+      violations: ['false_scheduling_confirmation_blocked'],
       original_preview: llmOutput.substring(0, 200),
     };
   }

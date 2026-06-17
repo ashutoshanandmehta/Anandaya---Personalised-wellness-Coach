@@ -6,7 +6,7 @@ import { requireProfileOwnership } from '../middleware/profileOwnershipMiddlewar
 import { extractProfileFromChat } from '../services/profileEngine.js';
 import { updateProfileContextSummary } from '../services/profileSummaryEngine.js';
 import { generateCheckIn } from '../services/checkinEngine.js';
-import { answerFromProtocol, answerFromProtocolStream } from '../services/protocolEngine.js';
+import { answerFromProtocol } from '../services/protocolEngine.js';
 import { enqueueJob } from '../services/jobQueue.js';
 import {
   routeSafety,
@@ -14,7 +14,13 @@ import {
   makeSafetyAuditRecord,
 } from '../services/deterministicSafetyRouter.js';
 import { handleCrisisMessage } from '../services/crisisModeHandler.js';
-import { applyPostGenerationFilter } from '../services/postGenerationFilter.js';
+import { applyPostGenerationFilter, filterLLMOutput } from '../services/postGenerationFilter.js';
+import {
+  detectAlarmSetupIntent,
+  planSleepAlarms,
+  formatLocalClock,
+} from '../services/sleepAlarmFlow.js';
+import { detectConversationalSchedulingTurn } from '../services/schedulingContext.js';
 import {
   buildCheckinOffer,
   isCheckinOfferDeclined,
@@ -393,6 +399,23 @@ async function saveAssistantAndReturn(db, res, {
   });
   endSse(res);
   return;
+}
+
+// Confirmation copy built ONLY from rows that were actually inserted into
+// scheduled_checkins. Never call this before the DB write succeeds.
+function buildSleepAlarmConfirmationReply(records = []) {
+  const lines = records
+    .map((r) => {
+      const local = r.metadata?.localTime;
+      const clock = local ? formatLocalClock({ hour: Number(local.split(':')[0]), minute: Number(local.split(':')[1]) }) : null;
+      return clock ? `• **${r.title}** — every day at ${clock}` : `• **${r.title}** — every day`;
+    })
+    .filter(Boolean);
+  if (lines.length === 0) return null;
+  const header = lines.length > 1
+    ? "Done — both alarms are saved and will repeat daily 🌙"
+    : "Done — your alarm is saved and will repeat daily 🌙";
+  return `${header}\n\n${lines.join('\n')}\n\nYou'll see them in your reminders list. Tell me if you'd like to change a time.`;
 }
 
 function normalizeList(value) {
@@ -921,6 +944,70 @@ router.post('/:profileId/chat', requireProfileOwnership, async (req, res) => {
     const isCrisisMode = safety.level === 'RED' || safety.level === 'ORANGE';
     const keepPendingOffer = pendingFollowupOffer && intentResult.intent === INTENTS.CLARIFICATION;
 
+    // ── Deterministic bedtime/wake-up alarm flow ─────────────────────
+    // The free-form LLM used to *offer* alarms without persisting any pending
+    // state, so acceptance turns ("yes go ahead with the alarms", "10 PM 6 AM
+    // it works") fell through and the model fabricated a confirmation with no
+    // DB row. Handle alarm setup here, deterministically, and only ever confirm
+    // AFTER a real scheduled_checkins write.
+    const pendingSleepAlarm = pendingFollowupOffer?.type === 'sleep_alarm_setup';
+    const alarmSetup = detectAlarmSetupIntent(message);
+    const alarmTimezone = resolveTimeZone(stateRow?.timezone, structuredProfile?.timezone, profileRow?.timezone);
+
+    if (!isCrisisMode && (pendingSleepAlarm || alarmSetup.isAlarmSetup)) {
+      const plan = planSleepAlarms({ message, timezone: alarmTimezone });
+
+      // Explicit decline while we're waiting for times.
+      if (pendingSleepAlarm && plan.count === 0 &&
+          /\b(?:no|nah|not\s+now|cancel|stop|never\s*mind|forget\s+it|leave\s+it|drop\s+it)\b/i.test(message)) {
+        await db.run('UPDATE patient_states SET pending_followup_offer_json = NULL WHERE profile_id = ?', [profileId]);
+        return saveAssistantAndReturn(db, res, {
+          conversationId, profileId,
+          reply: "No problem — I haven't set any alarms. Tell me a time whenever you'd like them.",
+          safety, mode: 'sleep_alarm_cancelled',
+        });
+      }
+
+      if (plan.count >= 1) {
+        const records = await createScheduledItemsFromOffers(db, {
+          userId, profile: profileRow, offers: plan.offers,
+        });
+        await db.run('UPDATE patient_states SET pending_followup_offer_json = NULL WHERE profile_id = ?', [profileId]);
+        invalidateReminderListCache({ userId });
+        return saveAssistantAndReturn(db, res, {
+          conversationId, profileId,
+          reply: buildSleepAlarmConfirmationReply(records) || 'Done — your alarm is saved and will repeat daily.',
+          safety, mode: 'sleep_alarm_created',
+          extra: { scheduledCheckins: records },
+        });
+      }
+
+      // No usable time. Re-ask only if the user is still in the alarm flow
+      // (named an alarm, or a short affirmative). If they clearly pivoted to a
+      // different topic while a setup was pending, release the pending state and
+      // let the message flow to normal handling — don't trap them.
+      const isShortAffirmative =
+        message.trim().split(/\s+/).length <= 4 ||
+        /\b(?:yes|yeah|yep|ok|okay|sure|please|go\s+ahead|do\s+it)\b/i.test(message);
+      const stillInAlarmFlow = alarmSetup.isAlarmSetup || isShortAffirmative;
+
+      if (!stillInAlarmFlow && pendingSleepAlarm) {
+        await db.run('UPDATE patient_states SET pending_followup_offer_json = NULL WHERE profile_id = ?', [profileId]);
+        // Fall through to normal routing (no return).
+      } else {
+        await db.run(
+          'UPDATE patient_states SET pending_followup_offer_json = ?, updated_at = CURRENT_TIMESTAMP WHERE profile_id = ?',
+          [JSON.stringify({ type: 'sleep_alarm_setup', phase: 'awaiting_times', createdAt: new Date().toISOString() }), profileId]
+        );
+        return saveAssistantAndReturn(db, res, {
+          conversationId, profileId,
+          reply: "Happy to set those up 🌙\n\nWhat times would you like? For sleep, give me a **bedtime** and a **wake-up** time — for example, \"10 PM and 6 AM\". I'll save them as soon as you tell me the times.",
+          safety, mode: 'sleep_alarm_awaiting_times',
+          extra: { pendingSchedule: true },
+        });
+      }
+    }
+
     // Reminder/scheduling intents — only these need the tool orchestrator (and
     // therefore the planner LLM call). For pure wellness/clarification/confusion
     // turns, skip straight to the streaming LLM and save ~1–3s per message.
@@ -939,10 +1026,20 @@ router.post('/:profileId/chat', requireProfileOwnership, async (req, res) => {
     // can ask for the time and persist a pendingToolAction for the next turn.
     const messageLooksReminderShaped =
       /\bremind\s+me\b|\bset\s+(?:a\s+)?(?:reminder|alarm)\b|\b(reminder|check[-\s]?in)\s+(?:to|for|me)\b/i.test(message);
+
+    // Conversational scheduling: the model often proposes reminders/times during
+    // coaching ("let's wind down at 11 PM", a reminder-summary table) WITHOUT any
+    // explicit "remind me" phrasing. When the previous assistant turn proposed a
+    // schedule and the user responds with a time or an affirmation, route this
+    // into the structured orchestrator so a real row gets written — instead of
+    // letting the free LLM fabricate a confirmation.
+    const conversationalSchedulingTurn = detectConversationalSchedulingTurn({ message, history });
+
     const intentNeedsOrchestrator =
       schedulerIntents.has(intentResult.intent) ||
       Boolean(pendingFollowupOffer) ||
-      messageLooksReminderShaped;
+      messageLooksReminderShaped ||
+      conversationalSchedulingTurn;
 
     let toolPipelineFailed = false;
     if (!isCrisisMode && intentNeedsOrchestrator) {
@@ -1377,7 +1474,11 @@ router.post('/:profileId/chat', requireProfileOwnership, async (req, res) => {
     const reminderIntentReachedLlm = reminderShapedIntents.has(intentResult.intent);
     const lastAssistantContent = [...history].reverse().find(m => m.role === 'assistant')?.content || '';
     const recentToolFailureInHistory = /couldn't save or check the schedule|couldn't save that reminder|couldn't save the change in the schedule|tool_preflight_failed/i.test(lastAssistantContent);
-    const additionalGuards = (reminderIntentReachedLlm || toolPipelineFailed || recentToolFailureInHistory)
+    // Any turn where scheduling could plausibly come up gets the prompt guards.
+    const reminderContext =
+      reminderIntentReachedLlm || toolPipelineFailed || recentToolFailureInHistory ||
+      alarmSetup.isAlarmSetup || messageLooksReminderShaped || conversationalSchedulingTurn;
+    const additionalGuards = reminderContext
       ? [
           'No reminder, check-in, or schedule has been saved this turn. The scheduling pipeline did not return a confirmed item.',
           'Do NOT claim, imply, or summarize that any reminder is set, scheduled, saved, queued, or "noted" — even if the prior assistant turn or chat history sounds like one was. Past messages may have referenced a reminder that was never persisted.',
@@ -1387,12 +1488,20 @@ router.post('/:profileId/chat', requireProfileOwnership, async (req, res) => {
       : null;
     const guardsPayload = additionalGuards ? `- ${additionalGuards}` : null;
 
+    // Honesty invariant (Layer 1): EVERY reminder-writing path (deterministic
+    // sleep alarms, the tool orchestrator, the direct-reminder handler) has
+    // already `return`ed before this point. So if we are here, NO schedule was
+    // written this turn — which means ANY "reminder is set / scheduled / all
+    // set / passed to the app" language the model produces now is necessarily
+    // false. SSE can't unsend streamed tokens, so we always buffer the full
+    // reply and run filterLLMOutput before emitting. This makes a fabricated
+    // confirmation structurally impossible, regardless of model or phrasing.
     console.log('[CHAT SAFETY FLOW]', {
       profileId,
       safetyModeBefore: currentMode,
       safetyLevel: safety.level,
-      selectedHandler: 'llm_stream',
-      reminderIntentReachedLlm,
+      selectedHandler: 'llm_buffered_filtered',
+      reminderContext,
       toolPipelineFailed,
       recentToolFailureInHistory,
       additionalGuardsAttached: Boolean(guardsPayload),
@@ -1405,20 +1514,9 @@ router.post('/:profileId/chat', requireProfileOwnership, async (req, res) => {
     let slotNameForLog = null;
 
     try {
-      // 1. Get the stream
-      const { stream, slotName } = await answerFromProtocolStream({
-        question: message,
-        profile: profileRow,
-        history,
-        patientState: stateForLLM,
-        safety,
-        additionalGuards: guardsPayload,
-      });
-      slotNameForLog = slotName;
-
       // 2. Compute the check-in offer concurrently. buildCheckinOffer is
       //    synchronous and may return null; wrap with Promise.resolve so
-      //    .catch never blows up the stream path.
+      //    .catch never blows up the path.
       const offerPromise = Promise.resolve()
         .then(() => buildCheckinOffer({
           message,
@@ -1433,24 +1531,29 @@ router.post('/:profileId/chat', requireProfileOwnership, async (req, res) => {
           return null;
         });
 
-      // 3. Pump the stream
-      const thinkFilter = makeThinkTagFilter();
-      for await (const chunk of stream) {
-        const raw = chunk.choices[0]?.delta?.content || '';
-        const text = raw ? thinkFilter.process(raw) : '';
-        if (text) {
-          fullReply += text;
-          writeSseToken(res, text);
-        }
+      // ── Buffered + filtered path (always) ──
+      // Buffer the full reply, strip think tags, then run the honesty filter
+      // before emitting. The filter passes benign wellness text through
+      // unchanged and only intervenes when the model claims a schedule was
+      // saved (which can never be true here — see the invariant note above).
+      const rawReply = stripThinkTags(await answerFromProtocol({
+        question: message,
+        profile: profileRow,
+        history,
+        patientState: stateForLLM,
+        safety,
+        additionalGuards: guardsPayload,
+      }));
+      slotNameForLog = 'llm_buffered_filtered';
+      const filtered = filterLLMOutput(rawReply, { schedulingForbidden: true });
+      fullReply = filtered.cleaned || rawReply;
+      if (filtered.violations?.length) {
+        console.warn('[Chat] honesty filter intervened:', filtered.violations);
       }
-      const tail = thinkFilter.flush();
-      if (tail) { fullReply += tail; writeSseToken(res, tail); }
-
       followupOffer = await offerPromise;
-
-      // 4. Send Metadata and end stream
       const uiActions = followupOffer ? [{ type: 'show_checkin_offer', offer: followupOffer }] : [];
-      writeSseMetadata(res, { uiActions, mode: 'llm_answer', safety, slotName });
+      writeSseToken(res, fullReply);
+      writeSseMetadata(res, { uiActions, mode: 'llm_answer', safety, slotName: slotNameForLog });
       endSse(res);
 
     } catch (streamErr) {
