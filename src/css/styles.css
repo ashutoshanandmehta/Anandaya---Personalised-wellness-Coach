@@ -3114,6 +3114,14 @@ body:has(#mainAppLayout:not(.hidden)) {
   box-shadow: 3px 4px 0 rgba(87, 64, 48, 0.07), var(--shadow-sm);
 }
 
+/* When message-content is only a typing-dots wrapper, strip its own bubble styling */
+.message.assistant .message-content:has(> .typing-dots) {
+  background: transparent;
+  border-color: transparent;
+  padding: 0;
+  box-shadow: none;
+}
+
 .message.user .message-content {
   max-width: min(340px, 52vw);
   background: var(--primary);
