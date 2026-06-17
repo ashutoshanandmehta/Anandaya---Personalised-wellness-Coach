@@ -3188,6 +3188,50 @@ body:has(#mainAppLayout:not(.hidden)) {
   font-weight: 400;
 }
 
+.message-content p,
+.message-content .crisis-text,
+.message-content .crisis-text p {
+  font-size: inherit;
+  line-height: inherit;
+}
+
+.message-content p {
+  margin: 0 0 0.72em;
+}
+
+.message-content p:first-child,
+.message-content p:last-child {
+  font-size: inherit;
+  line-height: inherit;
+}
+
+.message-content p:last-child {
+  margin-bottom: 0;
+}
+
+/* When the model emits markdown headings (#, ##) they otherwise render at huge
+   browser defaults, making the first/last line look like hero text. Cap every
+   heading level in a reply to body size — bold only — so the whole reply reads
+   as one consistent type scale. */
+.message-content h1,
+.message-content h2,
+.message-content h3,
+.message-content h4,
+.message-content h5,
+.message-content h6 {
+  font-size: inherit;
+  line-height: inherit;
+  font-weight: 700;
+  margin: 0 0 0.72em;
+}
+
+.message-content h1:first-child,
+.message-content h2:first-child,
+.message-content h3:first-child,
+.message-content h4:first-child {
+  margin-top: 0;
+}
+
 .message-meta {
   color: var(--text-muted);
   font-size: 0.68rem;
