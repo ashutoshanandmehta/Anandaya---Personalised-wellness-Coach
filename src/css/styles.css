@@ -4210,3 +4210,135 @@ body:has(#mainAppLayout:not(.hidden)) {
     max-width: 84vw;
   }
 }
+
+/* ═══════════════════════════════════════════════════════════════
+   DARK MODE OVERRIDES
+   Many older rules hardcode cream backgrounds and dark text instead
+   of using design tokens. Until those are fully migrated, this block
+   reskins the components that show up broken when html.dark is on.
+   ═══════════════════════════════════════════════════════════════ */
+
+html.dark .app-header,
+html.dark .left-nav,
+html.dark .right-sidebar,
+html.dark .right-sidebar-toggle,
+html.dark .right-sidebar-close,
+html.dark .left-nav-toggle,
+html.dark .modal-content,
+html.dark .notification-panel,
+html.dark .profile-dropdown,
+html.dark .dashboard-shell,
+html.dark .account-setup-card,
+html.dark .psb-identity,
+html.dark .psb-module,
+html.dark .psb-card,
+html.dark .left-nav-profile-card,
+html.dark .left-nav-history-item,
+html.dark .dashboard-profile-tile,
+html.dark .dashboard-add-profile,
+html.dark .notification-list,
+html.dark .notification-panel-header {
+  background-color: var(--surface);
+  color: var(--text-primary);
+  border-color: var(--border);
+}
+
+html.dark .modal-overlay { background: rgba(0, 0, 0, 0.7); }
+
+html.dark .header-brand-label,
+html.dark .dashboard-heading h1,
+html.dark .account-setup-heading h1,
+html.dark .account-setup-form .form-group label,
+html.dark .left-nav-profile-name,
+html.dark .left-nav-section-title,
+html.dark .psb-name,
+html.dark .psb-module-title,
+html.dark .psb-field-value,
+html.dark .sidebar-profile-name,
+html.dark .dashboard-profile-tile-name,
+html.dark .modal-header h3,
+html.dark .form-group label,
+html.dark h1, html.dark h2, html.dark h3, html.dark h4, html.dark h5, html.dark h6,
+html.dark .complete-session-btn {
+  color: var(--text-primary);
+}
+
+html.dark .dashboard-heading p,
+html.dark .account-setup-heading p,
+html.dark .left-nav-profile-relation,
+html.dark .psb-relation,
+html.dark .psb-field-label,
+html.dark .sidebar-profile-relation,
+html.dark .dashboard-profile-tile-relation,
+html.dark .input-disclaimer,
+html.dark .input-hint,
+html.dark .notification-empty,
+html.dark .text-muted,
+html.dark .text-secondary {
+  color: var(--text-secondary);
+}
+
+/* Form fields: force dark surface / light text even if a more specific
+   older selector tried to set a cream background. */
+html.dark input:not([type='checkbox']):not([type='radio']):not([type='range']):not([type='color']),
+html.dark textarea,
+html.dark select,
+html.dark .form-group input,
+html.dark .form-group textarea,
+html.dark .form-group select,
+html.dark .account-setup-form .form-group input,
+html.dark .account-setup-form .form-group select {
+  background-color: var(--surface) !important;
+  color: var(--text-primary) !important;
+  border-color: var(--border) !important;
+}
+html.dark .account-setup-form input[readonly] { background-color: var(--surface-soft) !important; }
+html.dark input::placeholder,
+html.dark textarea::placeholder { color: var(--text-muted); }
+html.dark .form-group select {
+  /* Re-color the caret SVG so it's visible on a dark background. */
+  background-image: url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' width='12' height='8' viewBox='0 0 12 8' fill='none'%3E%3Cpath d='M1 1L6 6L11 1' stroke='%23B5ADA6' stroke-width='1.5' stroke-linecap='round' stroke-linejoin='round'/%3E%3C/svg%3E");
+}
+
+/* Auth / Google button reads "white card with #3c4043 text" by default. */
+html.dark .btn-google {
+  background-color: var(--surface);
+  color: var(--text-primary);
+  border-color: var(--border);
+}
+html.dark .btn-google:hover { background-color: var(--surface-hover); }
+
+/* Concern card and other warm-cream callouts. */
+html.dark .psb-concern,
+html.dark .psb-concern-quote {
+  background-color: var(--surface-soft);
+  color: var(--text-primary);
+  border-color: var(--border);
+}
+
+/* Header brand strip: the parent .app-header already swaps; just make
+   sure the small brand-icon background isn't a hardcoded cream. */
+html.dark .header-brand-icon { filter: none; }
+
+/* Chat surfaces */
+html.dark .chat-input-area,
+html.dark .input-container,
+html.dark .message.assistant .message-content {
+  background-color: var(--surface);
+  color: var(--text-primary);
+  border-color: var(--border);
+}
+html.dark .message.user .message-content {
+  /* keep the orange bubble */
+  color: var(--text-inverse);
+}
+
+/* Toggles and pills */
+html.dark .header-icon-placeholder,
+html.dark .notification-btn,
+html.dark .dashboard-btn,
+html.dark .profile-btn {
+  background-color: var(--surface);
+  color: var(--text-primary);
+  border-color: var(--border);
+}
