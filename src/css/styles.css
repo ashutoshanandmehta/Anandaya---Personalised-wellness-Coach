@@ -2568,24 +2568,24 @@ body:has(#mainAppLayout:not(.hidden)) {
 }
 
 .app-header {
-  height: 56px;
+  height: 50px;
   background: var(--bg);
   border-bottom: 1px solid var(--border-subtle);
   box-shadow: 0 1px 0 rgba(87, 64, 48, 0.03);
-  padding: 0 20px;
+  padding: 0 16px;
 }
 
 .header-brand {
-  gap: 8px;
+  gap: 7px;
 }
 
 .header-brand-icon {
-  width: 34px;
-  height: 34px;
+  width: 30px;
+  height: 30px;
   border: 1px solid var(--surface-warm-pill);
-  border-radius: 10px;
+  border-radius: 9px;
   background: var(--surface-soft);
-  padding: 5px;
+  padding: 4px;
   box-shadow: var(--shadow-sm);
 }
 
@@ -2597,19 +2597,19 @@ body:has(#mainAppLayout:not(.hidden)) {
 }
 
 .header-brand-label {
-  font-size: 0.875rem;
+  font-size: 0.8125rem;
   font-weight: 800;
   color: var(--text-primary);
 }
 
 .header-brand-subtitle {
-  font-size: 0.65rem;
+  font-size: 0.625rem;
   font-weight: 600;
   color: var(--text-warm-accent);
 }
 
 .header-actions {
-  gap: 8px;
+  gap: 6px;
 }
 
 .dashboard-btn,
@@ -2629,9 +2629,9 @@ body:has(#mainAppLayout:not(.hidden)) {
 }
 
 .dashboard-btn {
-  min-height: 36px;
-  padding: 0 14px;
-  border-radius: 10px;
+  min-height: 30px;
+  padding: 0 12px;
+  border-radius: 9px;
   box-shadow: var(--shadow-sm);
   cursor: pointer;
 }
@@ -2642,8 +2642,8 @@ body:has(#mainAppLayout:not(.hidden)) {
 }
 
 .complete-session-btn {
-  min-height: 36px;
-  padding: 0 16px;
+  min-height: 30px;
+  padding: 0 14px;
   border-radius: var(--r-full);
   background: var(--primary);
   border-color: var(--primary);
@@ -2663,8 +2663,8 @@ body:has(#mainAppLayout:not(.hidden)) {
 
 .notification-btn,
 .profile-btn {
-  width: 36px;
-  height: 36px;
+  width: 30px;
+  height: 30px;
   background: var(--surface);
   border: 1px solid var(--border);
   box-shadow: var(--shadow-sm);
@@ -2728,7 +2728,7 @@ body:has(#mainAppLayout:not(.hidden)) {
 
 .app-layout {
   height: 100dvh;
-  padding-top: 56px;
+  padding-top: 50px;
   background: var(--bg);
 }
 
@@ -2738,21 +2738,21 @@ body:has(#mainAppLayout:not(.hidden)) {
 }
 
 .day-stepper-bar {
-  min-height: 64px;
-  padding: 0 28px;
+  min-height: 54px;
+  padding: 0 22px;
   background: var(--bg);
   border-bottom: 1px solid var(--border-subtle);
   flex-direction: row;
   align-items: center;
   justify-content: space-between;
-  gap: 16px;
+  gap: 12px;
 }
 
 .day-progress-group {
   display: flex;
   align-items: center;
   min-width: 0;
-  gap: 16px;
+  gap: 12px;
 }
 
 .day-stepper-title {
@@ -2763,14 +2763,14 @@ body:has(#mainAppLayout:not(.hidden)) {
 }
 
 .day-stepper-inner {
-  gap: 6px;
-  max-width: min(44vw, 460px);
+  gap: 5px;
+  max-width: min(44vw, 420px);
 }
 
 .day-step {
-  width: 26px;
-  height: 26px;
-  font-size: 0.72rem;
+  width: 22px;
+  height: 22px;
+  font-size: 0.68rem;
   font-weight: 750;
 }
 
@@ -2803,8 +2803,8 @@ body:has(#mainAppLayout:not(.hidden)) {
 }
 
 .right-sidebar {
-  width: clamp(280px, 22vw, 360px);
-  min-width: clamp(280px, 22vw, 360px);
+  width: clamp(240px, 20vw, 300px);
+  min-width: clamp(240px, 20vw, 300px);
   background: var(--bg-secondary);
   border-right: 1px solid var(--border-subtle);
   box-shadow: 1px 0 0 rgba(87, 64, 48, 0.02);
@@ -2815,10 +2815,10 @@ body:has(#mainAppLayout:not(.hidden)) {
 }
 
 .right-sidebar-toggle {
-  top: 18px;
-  right: -18px;
-  width: 38px;
-  height: 38px;
+  top: 14px;
+  right: -16px;
+  width: 32px;
+  height: 32px;
   background: var(--surface);
   color: var(--text-muted);
   border-color: var(--border);
@@ -2831,15 +2831,15 @@ body:has(#mainAppLayout:not(.hidden)) {
 }
 
 .psb-identity {
-  min-height: 88px;
-  padding: 16px 20px;
+  min-height: 72px;
+  padding: 12px 16px;
   background: transparent;
   border-bottom: 1px solid var(--border-subtle);
 }
 
 .psb-photo-ring {
-  width: 48px;
-  height: 48px;
+  width: 40px;
+  height: 40px;
 }
 
 .psb-avatar {
@@ -2850,8 +2850,8 @@ body:has(#mainAppLayout:not(.hidden)) {
 }
 
 .psb-photo-edit {
-  width: 24px;
-  height: 24px;
+  width: 20px;
+  height: 20px;
   background: var(--surface);
   border-color: var(--border);
   color: var(--primary);
@@ -2870,7 +2870,7 @@ body:has(#mainAppLayout:not(.hidden)) {
 }
 
 .psb-name {
-  font-size: 0.9375rem;
+  font-size: 0.875rem;
   font-weight: 800;
 }
 
@@ -2894,8 +2894,8 @@ body:has(#mainAppLayout:not(.hidden)) {
 }
 
 .psb-settings-btn {
-  width: 32px;
-  height: 32px;
+  width: 26px;
+  height: 26px;
   background: var(--surface);
   border: 1px solid var(--border);
   color: var(--text-secondary);
@@ -2909,12 +2909,12 @@ body:has(#mainAppLayout:not(.hidden)) {
 }
 
 .psb-module {
-  padding: 16px 20px;
+  padding: 12px 16px;
   border-bottom: 1px solid var(--border-subtle);
 }
 
 .psb-module-header {
-  margin-bottom: 10px;
+  margin-bottom: 8px;
 }
 
 .psb-module-icon {
@@ -2929,12 +2929,12 @@ body:has(#mainAppLayout:not(.hidden)) {
 }
 
 .psb-module-body {
-  gap: 8px;
+  gap: 6px;
 }
 
 .psb-field {
   font-size: 0.8125rem;
-  gap: 12px;
+  gap: 8px;
 }
 
 .psb-field-label {
@@ -2951,15 +2951,15 @@ body:has(#mainAppLayout:not(.hidden)) {
 #psbConcern .psb-module-body {
   background: var(--surface-warm-soft);
   border: 1px solid var(--surface-warm-pill);
-  border-radius: 12px;
-  padding: 14px;
+  border-radius: 10px;
+  padding: 10px;
   box-shadow: 0 4px 12px rgba(87, 64, 48, 0.04);
 }
 
 .psb-concern-quote {
   color: var(--text-primary);
   font-family: var(--font-serif);
-  font-size: 0.875rem;
+  font-size: 0.8125rem;
   font-style: italic;
   font-weight: 600;
   line-height: 1.45;
@@ -3005,12 +3005,12 @@ body:has(#mainAppLayout:not(.hidden)) {
   list-style: none;
   display: flex;
   flex-direction: column;
-  gap: 12px;
+  gap: 8px;
 }
 
 .tag-list li {
   position: relative;
-  padding-left: 14px;
+  padding-left: 12px;
   color: var(--text-primary);
   font-size: 0.8125rem;
   font-weight: 650;
@@ -3061,66 +3061,66 @@ body:has(#mainAppLayout:not(.hidden)) {
 }
 
 .chat-messages {
-  padding: 28px 36px 110px;
-  gap: 20px;
-  scroll-padding-bottom: 20px;
+  padding: 20px 28px 90px;
+  gap: 14px;
+  scroll-padding-bottom: 16px;
 }
 
 .message,
 .typing-indicator {
-  max-width: 800px;
+  max-width: 700px;
 }
 
 .message {
-  gap: 14px;
+  gap: 10px;
 }
 
 .message.user {
-  max-width: 800px;
+  max-width: 700px;
   margin-left: auto;
 }
 
 .message-avatar {
-  width: 34px;
-  height: 34px;
+  width: 28px;
+  height: 28px;
   background: var(--surface-soft);
   border: 1px solid var(--surface-warm-pill);
   box-shadow: var(--shadow-sm);
 }
 
 .message-avatar img {
-  padding: 5px;
+  padding: 4px;
 }
 
 .message-stack {
-  max-width: min(680px, calc(100% - 50px));
+  max-width: min(600px, calc(100% - 40px));
   display: flex;
   flex-direction: column;
-  gap: 10px;
+  gap: 8px;
 }
 
 .message-content {
-  padding: 14px 18px;
-  border-radius: 18px;
-  font-size: 0.9rem;
-  line-height: 1.62;
+  padding: 10px 14px;
+  border-radius: 14px;
+  font-size: 0.8125rem;
+  line-height: 1.6;
 }
 
 .message.assistant .message-content {
   background: var(--surface);
   border: 1px solid var(--border-subtle);
-  border-bottom-left-radius: 18px;
+  border-bottom-left-radius: 14px;
   color: var(--text-primary);
   box-shadow: 3px 4px 0 rgba(87, 64, 48, 0.07), var(--shadow-sm);
 }
 
 .message.user .message-content {
-  max-width: min(400px, 58vw);
+  max-width: min(340px, 52vw);
   background: var(--primary);
   border: 1px solid var(--primary);
   color: var(--text-inverse);
-  border-radius: 18px;
-  border-bottom-right-radius: 18px;
+  border-radius: 14px;
+  border-bottom-right-radius: 14px;
   box-shadow: 0 6px 16px rgba(217, 92, 43, 0.14);
 }
 
@@ -3149,13 +3149,13 @@ body:has(#mainAppLayout:not(.hidden)) {
 }
 
 .typing-dots {
-  width: 44px;
-  min-width: 44px;
-  height: 28px;
+  width: 38px;
+  min-width: 38px;
+  height: 24px;
   display: inline-flex;
   align-items: center;
   justify-content: center;
-  gap: 5px;
+  gap: 4px;
   background: var(--surface);
   border-color: var(--border-subtle);
   box-shadow: var(--shadow-sm);
@@ -3172,21 +3172,21 @@ body:has(#mainAppLayout:not(.hidden)) {
 }
 
 .chat-input-area {
-  padding: 10px 36px 16px;
+  padding: 8px 28px 12px;
   background: linear-gradient(180deg, rgba(250,247,242,0), var(--bg) 28%);
 }
 
 .chat-input-wrapper {
-  max-width: 800px;
+  max-width: 700px;
 }
 
 .input-container {
-  min-height: 52px;
+  min-height: 44px;
   align-items: center;
   background: var(--surface);
   border-color: var(--border);
-  border-radius: 26px;
-  padding: 8px 8px 8px 18px;
+  border-radius: 22px;
+  padding: 6px 6px 6px 14px;
   box-shadow: 0 3px 10px rgba(87, 64, 48, 0.08);
 }
 
@@ -3197,7 +3197,7 @@ body:has(#mainAppLayout:not(.hidden)) {
 
 #chatInput {
   color: var(--text-primary);
-  font-size: 0.875rem;
+  font-size: 0.8125rem;
 }
 
 #chatInput::placeholder {
@@ -3205,8 +3205,8 @@ body:has(#mainAppLayout:not(.hidden)) {
 }
 
 .send-btn {
-  width: 38px;
-  height: 38px;
+  width: 32px;
+  height: 32px;
   border-radius: 50%;
   background: var(--surface-soft);
   color: var(--primary);
@@ -3232,8 +3232,8 @@ body:has(#mainAppLayout:not(.hidden)) {
 }
 
 .header-icon-placeholder {
-  width: 36px;
-  height: 36px;
+  width: 30px;
+  height: 30px;
   border-radius: 50%;
   box-shadow: var(--shadow-sm);
 }
@@ -3251,8 +3251,8 @@ body:has(#mainAppLayout:not(.hidden)) {
 }
 
 .attachment-placeholder-btn {
-  width: 44px;
-  height: 44px;
+  width: 36px;
+  height: 36px;
   border-radius: 50%;
   flex-shrink: 0;
   background: var(--surface-warm-soft);
@@ -3607,8 +3607,8 @@ body:has(#mainAppLayout:not(.hidden)) {
 
 @media (max-width: 1280px) {
   .right-sidebar {
-    width: 340px;
-    min-width: 340px;
+    width: 280px;
+    min-width: 280px;
   }
 
   .day-stepper-bar,
@@ -3624,7 +3624,7 @@ body:has(#mainAppLayout:not(.hidden)) {
     position: fixed;
     left: 0;
     right: auto;
-    top: 56px;
+    top: 50px;
     bottom: 0;
     width: min(400px, calc(100vw - 48px));
     min-width: 0;
@@ -3640,7 +3640,7 @@ body:has(#mainAppLayout:not(.hidden)) {
     position: fixed;
     left: var(--sp-4);
     right: auto;
-    top: calc(56px + var(--sp-4));
+    top: calc(50px + var(--sp-4));
     z-index: 45;
   }
 
@@ -3659,12 +3659,12 @@ body:has(#mainAppLayout:not(.hidden)) {
 
 @media (max-width: 768px) {
   .app-header {
-    height: 66px;
+    height: 58px;
     padding: 0 14px;
   }
 
   .app-layout {
-    padding-top: 66px;
+    padding-top: 58px;
   }
 
   .header-brand-icon {
@@ -3695,7 +3695,7 @@ body:has(#mainAppLayout:not(.hidden)) {
   }
 
   .dashboard-shell {
-    padding: calc(66px + 32px) 20px 48px;
+    padding: calc(58px + 28px) 20px 48px;
   }
 
   .account-setup-card {
@@ -3712,16 +3712,16 @@ body:has(#mainAppLayout:not(.hidden)) {
   }
 
   .right-sidebar {
-    top: 66px;
+    top: 58px;
   }
 
   .right-sidebar-toggle {
-    top: calc(66px + var(--sp-4));
+    top: calc(58px + var(--sp-4));
   }
 
   .day-stepper-bar {
-    min-height: 60px;
-    padding: 10px 18px 10px 60px;
+    min-height: 52px;
+    padding: 8px 16px 8px 52px;
   }
 
   .day-progress-group {
@@ -3797,7 +3797,7 @@ body:has(#mainAppLayout:not(.hidden)) {
   }
 
   .app-header {
-    height: 62px;
+    height: 54px;
     padding: 0 max(10px, env(safe-area-inset-left)) 0 max(12px, env(safe-area-inset-right));
     gap: 8px;
   }
@@ -3873,7 +3873,7 @@ body:has(#mainAppLayout:not(.hidden)) {
   .notification-panel,
   .profile-dropdown {
     position: fixed;
-    top: 68px;
+    top: 60px;
     right: 10px;
     left: 10px;
     width: auto;
@@ -3903,7 +3903,7 @@ body:has(#mainAppLayout:not(.hidden)) {
   .app-layout {
     height: 100dvh;
     min-height: 100svh;
-    padding-top: 62px;
+    padding-top: 54px;
   }
 
   .center-pane {
@@ -3912,9 +3912,9 @@ body:has(#mainAppLayout:not(.hidden)) {
   }
 
   .day-stepper-bar {
-    min-height: 64px;
-    padding: 10px 12px 10px 56px;
-    gap: 10px;
+    min-height: 54px;
+    padding: 8px 10px 8px 48px;
+    gap: 8px;
     align-items: center;
   }
 
@@ -3962,7 +3962,7 @@ body:has(#mainAppLayout:not(.hidden)) {
   }
 
   .right-sidebar {
-    top: 62px;
+    top: 54px;
     width: min(360px, calc(100vw - 28px));
     max-width: calc(100vw - 28px);
     min-width: 0;
@@ -3971,10 +3971,10 @@ body:has(#mainAppLayout:not(.hidden)) {
   }
 
   .right-sidebar-toggle {
-    top: calc(62px + 18px);
-    left: 12px;
-    width: 36px;
-    height: 36px;
+    top: calc(54px + 14px);
+    left: 10px;
+    width: 30px;
+    height: 30px;
   }
 
   .psb-identity {
@@ -4008,9 +4008,9 @@ body:has(#mainAppLayout:not(.hidden)) {
   }
 
   .chat-messages {
-    padding: 20px 12px 90px;
-    gap: 18px;
-    scroll-padding-bottom: 16px;
+    padding: 16px 12px 80px;
+    gap: 14px;
+    scroll-padding-bottom: 12px;
   }
 
   .message,
