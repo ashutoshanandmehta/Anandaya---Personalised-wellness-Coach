@@ -299,6 +299,47 @@ function buildPendingScheduleCapture(baseOffer, parseResult = {}) {
   };
 }
 
+function stripThinkTags(text) {
+  return String(text || '').replace(/<think>[\s\S]*?<\/think>/gi, '').trim();
+}
+
+function makeThinkTagFilter() {
+  let buf = '';
+  let inThink = false;
+  function process(chunk) {
+    buf += chunk;
+    let out = '';
+    while (true) {
+      if (inThink) {
+        const end = buf.indexOf('</think>');
+        if (end === -1) {
+          buf = buf.slice(Math.max(0, buf.length - 8));
+          break;
+        }
+        inThink = false;
+        buf = buf.slice(end + 8);
+      } else {
+        const start = buf.indexOf('<think>');
+        if (start === -1) {
+          const safe = Math.max(0, buf.length - 7);
+          out += buf.slice(0, safe);
+          buf = buf.slice(safe);
+          break;
+        }
+        out += buf.slice(0, start);
+        inThink = true;
+        buf = buf.slice(start + 7);
+      }
+    }
+    return out;
+  }
+  function flush() {
+    if (inThink) { buf = ''; return ''; }
+    const out = buf; buf = ''; return out;
+  }
+  return { process, flush };
+}
+
 function setupSse(res) {
   if (res.headersSent) return;
   res.setHeader('Content-Type', 'text/event-stream');
@@ -668,12 +709,19 @@ router.delete('/:profileId', requireProfileOwnership, async (req, res) => {
 
 // Securely serve avatars
 router.get('/avatars/:filename', (req, res) => {
-  const filePath = path.join(process.cwd(), 'data', 'avatars', req.params.filename);
-  if (fs.existsSync(filePath)) {
-    res.sendFile(filePath);
-  } else {
-    res.status(404).json({ error: 'Avatar not found' });
+  const { filename } = req.params;
+  if (!/^[\w-]+\.(jpg|jpeg|png|webp|gif)$/i.test(filename)) {
+    return res.status(400).json({ error: 'Invalid filename' });
   }
+  const avatarsDir = path.resolve(process.cwd(), 'data', 'avatars');
+  const filePath = path.resolve(avatarsDir, filename);
+  if (!filePath.startsWith(avatarsDir + path.sep)) {
+    return res.status(403).json({ error: 'Forbidden' });
+  }
+  if (!fs.existsSync(filePath)) {
+    return res.status(404).json({ error: 'Avatar not found' });
+  }
+  res.sendFile(filePath);
 });
 
 // ── State & Onboarding ─────────────────────────────────────────
@@ -1386,13 +1434,17 @@ router.post('/:profileId/chat', requireProfileOwnership, async (req, res) => {
         });
 
       // 3. Pump the stream
+      const thinkFilter = makeThinkTagFilter();
       for await (const chunk of stream) {
-        const text = chunk.choices[0]?.delta?.content || '';
+        const raw = chunk.choices[0]?.delta?.content || '';
+        const text = raw ? thinkFilter.process(raw) : '';
         if (text) {
           fullReply += text;
           writeSseToken(res, text);
         }
       }
+      const tail = thinkFilter.flush();
+      if (tail) { fullReply += tail; writeSseToken(res, tail); }
 
       followupOffer = await offerPromise;
 
@@ -1404,14 +1456,14 @@ router.post('/:profileId/chat', requireProfileOwnership, async (req, res) => {
     } catch (streamErr) {
       console.error('[Chat] Stream error:', streamErr);
       try {
-        const fallbackReply = await answerFromProtocol({
+        const fallbackReply = stripThinkTags(await answerFromProtocol({
           question: message,
           profile: profileRow,
           history,
           patientState: stateForLLM,
           safety,
           additionalGuards: guardsPayload,
-        });
+        }));
         fullReply = fallbackReply;
         followupOffer = null;
         writeSseToken(res, fallbackReply);

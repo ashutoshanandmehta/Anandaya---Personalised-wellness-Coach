@@ -121,9 +121,15 @@ export async function orchestrateToolAction({
   }
 
   // Check for clarification in any action
-  const clarificationAction = actions.find(a => a.action === 'ask_clarification');
-  if (clarificationAction) {
-    const reply = clarificationAction.clarificationQuestion || buildMissingFieldsReply(clarificationAction, profile);
+  const clarificationActions = actions.filter(a => a.action === 'ask_clarification');
+  if (clarificationActions.length > 0) {
+    // Combine all clarification questions into one reply (deduplicate identical questions)
+    const seen = new Set();
+    const questions = clarificationActions
+      .map(a => a.clarificationQuestion || buildMissingFieldsReply(a, profile))
+      .filter(q => { if (seen.has(q)) return false; seen.add(q); return true; });
+    const reply = questions.join('\n\n');
+    const clarificationAction = clarificationActions[0];
     await auditToolAction(db, {
       userId,
       profileId,
