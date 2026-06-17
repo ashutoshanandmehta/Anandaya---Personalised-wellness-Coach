@@ -3149,13 +3149,6 @@ body:has(#mainAppLayout:not(.hidden)) {
 }
 
 .typing-dots {
-  width: 38px;
-  min-width: 38px;
-  height: 24px;
-  display: inline-flex;
-  align-items: center;
-  justify-content: center;
-  gap: 4px;
   background: var(--surface);
   border-color: var(--border-subtle);
   box-shadow: var(--shadow-sm);
@@ -3328,7 +3321,7 @@ body:has(#mainAppLayout:not(.hidden)) {
 .form-group input,
 .form-group select,
 .form-group textarea {
-  background: var(--surface-warm-soft);
+  background-color: var(--surface-warm-soft);
   border-color: var(--border);
   color: var(--text-primary);
 }
