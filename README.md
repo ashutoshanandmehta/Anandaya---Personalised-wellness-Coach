@@ -108,8 +108,7 @@ npm run dev
 
 Open:
 
-- Frontend: [http://localhost:5173](http://localhost:5173)
-- Backend health check: [http://localhost:3001/api/health](http://localhost:3001/api/health)
+- Frontend: [https://health-coach-ai.onrender.com/](https://health-coach-ai.onrender.com/)
 
 Vite proxies `/api` requests to `VITE_API_PROXY_TARGET`, which defaults to the local backend.
 
