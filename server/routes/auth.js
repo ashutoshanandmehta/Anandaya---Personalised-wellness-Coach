@@ -42,6 +42,53 @@ function getServerClock() {
   };
 }
 
+function normalizeMobilePlatform(value = '') {
+  return String(value || '').trim().toLowerCase() === 'android' ? 'android' : '';
+}
+
+function isMobileOAuthState(value = '') {
+  return String(value || '').trim().toLowerCase() === 'mobile_android';
+}
+
+function getMobileCallbackUrl(code) {
+  return `anandaya://auth/callback?code=${encodeURIComponent(code)}`;
+}
+
+async function ensureMobileAuthCodeTable(db) {
+  await db.exec(`
+    CREATE TABLE IF NOT EXISTS mobile_auth_codes (
+      code TEXT PRIMARY KEY,
+      user_id TEXT NOT NULL,
+      expires_at DATETIME NOT NULL,
+      consumed_at DATETIME,
+      created_at DATETIME DEFAULT CURRENT_TIMESTAMP,
+      FOREIGN KEY (user_id) REFERENCES users(id) ON DELETE CASCADE
+    );
+  `);
+}
+
+async function createMobileAuthCode(db, userId) {
+  await ensureMobileAuthCodeTable(db);
+  await db.run("DELETE FROM mobile_auth_codes WHERE datetime(expires_at) <= datetime('now') OR consumed_at IS NOT NULL");
+  const code = uuidv4();
+  const expiresAt = new Date(Date.now() + 5 * 60 * 1000).toISOString();
+  await db.run(
+    'INSERT INTO mobile_auth_codes (code, user_id, expires_at) VALUES (?, ?, ?)',
+    [code, userId, expiresAt]
+  );
+  return code;
+}
+
+async function createSessionForUser(db, userId) {
+  const sessionId = uuidv4();
+  const expiresAt = new Date(Date.now() + SESSION_EXPIRY_DAYS * 24 * 60 * 60 * 1000).toISOString();
+  await db.run(
+    'INSERT INTO sessions (id, user_id, expires_at) VALUES (?, ?, ?)',
+    [sessionId, userId, expiresAt]
+  );
+  return { sessionId, expiresAt };
+}
+
 function buildUserPayload(user = {}) {
   return {
     id: user.id,
@@ -155,22 +202,25 @@ async function upsertOwnerPatientState(db, { profileId, age, gender, dateOfBirth
 router.get('/google', (req, res) => {
   const clientId = process.env.GOOGLE_CLIENT_ID;
   const redirectUri = process.env.GOOGLE_CALLBACK_URL;
+  const mobilePlatform = normalizeMobilePlatform(req.query.platform);
+  const state = mobilePlatform === 'android' ? 'mobile_android' : '';
 
   if (process.env.NODE_ENV === 'development' && (!clientId || !redirectUri)) {
     // In development mode, bypass the live Google authentication flow entirely if offline or missing keys
     const fallbackUri = redirectUri || 'http://localhost:3000/api/auth/google/callback';
-    return res.redirect(`${fallbackUri}?code=mock_code_dev`);
+    return res.redirect(`${fallbackUri}?code=mock_code_dev${state ? `&state=${encodeURIComponent(state)}` : ''}`);
   }
 
   if (!clientId || !redirectUri) {
     return res.status(500).send('Google OAuth is not configured');
   }
-  const authUrl = `https://accounts.google.com/o/oauth2/v2/auth?client_id=${clientId}&redirect_uri=${encodeURIComponent(redirectUri)}&response_type=code&scope=openid%20email%20profile&prompt=select_account`;
+  const authUrl = `https://accounts.google.com/o/oauth2/v2/auth?client_id=${clientId}&redirect_uri=${encodeURIComponent(redirectUri)}&response_type=code&scope=openid%20email%20profile&prompt=select_account${state ? `&state=${encodeURIComponent(state)}` : ''}`;
   res.redirect(authUrl);
 });
 
 router.get('/google/callback', async (req, res) => {
-  const { code } = req.query;
+  const { code, state } = req.query;
+  const isMobileAndroid = isMobileOAuthState(state);
   if (!code) return res.status(400).send('No code provided');
 
   let sub = 'mock-google-sub-12345';
@@ -258,13 +308,13 @@ router.get('/google/callback', async (req, res) => {
       await db.run('UPDATE users SET last_login_at = CURRENT_TIMESTAMP WHERE id = ?', [user.id]);
     }
 
+    if (isMobileAndroid) {
+      const mobileCode = await createMobileAuthCode(db, user.id);
+      return res.redirect(getMobileCallbackUrl(mobileCode));
+    }
+
     // 4. Create session
-    const sessionId = uuidv4();
-    const expiresAt = new Date(Date.now() + SESSION_EXPIRY_DAYS * 24 * 60 * 60 * 1000).toISOString();
-    await db.run(
-      'INSERT INTO sessions (id, user_id, expires_at) VALUES (?, ?, ?)',
-      [sessionId, user.id, expiresAt]
-    );
+    const { sessionId } = await createSessionForUser(db, user.id);
 
     setSessionCookie(res, sessionId);
     
@@ -275,6 +325,44 @@ router.get('/google/callback', async (req, res) => {
     console.error('[Google Callback Database Error]', error);
     const frontendUrl = process.env.FRONTEND_URL || '';
     res.redirect(`${frontendUrl}/?error=internal_error`);
+  }
+});
+
+router.post('/mobile/exchange', async (req, res) => {
+  try {
+    const code = String(req.body?.code || '').trim();
+    if (!code) return res.status(400).json({ error: 'Missing mobile auth code.' });
+
+    const db = await getDb();
+    await ensureMobileAuthCodeTable(db);
+
+    const row = await db.get(`
+      SELECT code, user_id, expires_at, consumed_at
+      FROM mobile_auth_codes
+      WHERE code = ?
+    `, [code]);
+
+    if (!row || row.consumed_at || new Date(row.expires_at) < new Date()) {
+      return res.status(401).json({ error: 'Invalid or expired mobile auth code.' });
+    }
+
+    await db.run(
+      'UPDATE mobile_auth_codes SET consumed_at = CURRENT_TIMESTAMP WHERE code = ? AND consumed_at IS NULL',
+      [code]
+    );
+
+    const { sessionId, expiresAt } = await createSessionForUser(db, row.user_id);
+    setSessionCookie(res, sessionId);
+
+    res.json({
+      success: true,
+      sessionId,
+      expiresAt,
+      userId: row.user_id,
+    });
+  } catch (error) {
+    console.error('[Mobile Auth Exchange]', error);
+    res.status(500).json({ error: 'Could not complete mobile sign-in.' });
   }
 });
 

@@ -139,7 +139,7 @@
         <form id="loginForm" class="auth-form">
           <h3>Welcome back</h3>
 
-          <a href="/api/auth/google" class="btn-google">
+          <a href="https://health-coach-ai.onrender.com/api/auth/google" class="btn-google" data-google-auth-link>
             <svg class="google-icon" viewBox="0 0 24 24" aria-hidden="true">
               <path fill="#4285F4" d="M22.56 12.25c0-.78-.07-1.53-.2-2.25H12v4.26h5.92c-.26 1.37-1.04 2.53-2.21 3.31v2.77h3.57c2.08-1.92 3.28-4.74 3.28-8.09z"/>
               <path fill="#34A853" d="M12 23c2.97 0 5.46-.98 7.28-2.66l-3.57-2.77c-.98.66-2.23 1.06-3.71 1.06-2.86 0-5.29-1.93-6.16-4.53H2.18v2.84C3.99 20.53 7.7 23 12 23z"/>
@@ -174,7 +174,7 @@
         <form id="signupEmailForm" class="auth-form hidden">
           <h3>Create account</h3>
 
-          <a href="/api/auth/google" class="btn-google">
+          <a href="https://health-coach-ai.onrender.com/api/auth/google" class="btn-google" data-google-auth-link>
             <svg class="google-icon" viewBox="0 0 24 24" aria-hidden="true">
               <path fill="#4285F4" d="M22.56 12.25c0-.78-.07-1.53-.2-2.25H12v4.26h5.92c-.26 1.37-1.04 2.53-2.21 3.31v2.77h3.57c2.08-1.92 3.28-4.74 3.28-8.09z"/>
               <path fill="#34A853" d="M12 23c2.97 0 5.46-.98 7.28-2.66l-3.57-2.77c-.98.66-2.23 1.06-3.71 1.06-2.86 0-5.29-1.93-6.16-4.53H2.18v2.84C3.99 20.53 7.7 23 12 23z"/>
@@ -258,6 +258,54 @@
         </form>
 
       </div><!-- /auth-card -->
+
+      <!-- Animated product preview -->
+      <section class="auth-preview-card" aria-label="What Anandaya can do">
+        <div class="auth-preview-phone">
+          <div class="auth-preview-head">
+            <div class="auth-preview-brand">
+              <span>Coach preview</span>
+            </div>
+            <div class="auth-preview-live">
+              <svg viewBox="0 0 24 24" fill="none" aria-hidden="true">
+                <path d="M20 12a8 8 0 0 1-13.6 5.7M4 12A8 8 0 0 1 17.6 6.3" stroke="currentColor" stroke-width="2.2" stroke-linecap="round"/>
+                <path d="M18 3v4h-4M6 21v-4h4" stroke="currentColor" stroke-width="2.2" stroke-linecap="round" stroke-linejoin="round"/>
+              </svg>
+              live flow
+            </div>
+          </div>
+
+          <div class="auth-preview-body">
+            <div class="auth-preview-bubble auth-preview-bubble-user">I slept badly and skipped my walk.</div>
+            <div class="auth-preview-bubble auth-preview-bubble-ai">
+              <strong>Anandaya:</strong> Let us keep today realistic: hydration first, a short walk after lunch, and a wind-down reminder tonight.
+            </div>
+            <div class="auth-preview-typing" aria-hidden="true">
+              <span></span><span></span><span></span>
+            </div>
+          </div>
+
+          <div class="auth-preview-input">
+            <span>What should I focus on today?</span>
+            <span class="auth-preview-send" aria-hidden="true">
+              <svg viewBox="0 0 24 24" fill="none">
+                <path d="M4 12 20 4l-5 16-3-7-8-1Z" stroke="currentColor" stroke-width="2" stroke-linejoin="round"/>
+              </svg>
+            </span>
+          </div>
+        </div>
+
+        <div class="auth-preview-copy">
+          <p class="auth-preview-kicker">Personalised wellness coach</p>
+          <h2>Care that turns each chat into the next useful step.</h2>
+          <p>Anandaya listens to your context, shapes simple wellness actions, remembers follow-ups, and keeps safety boundaries visible.</p>
+          <div class="auth-preview-points">
+            <span>Profile-aware guidance</span>
+            <span>Check-ins and reminders</span>
+            <span>Progress continuity</span>
+          </div>
+        </div>
+      </section>
     </div><!-- /auth-layout -->
   </div><!-- /authShell -->
 

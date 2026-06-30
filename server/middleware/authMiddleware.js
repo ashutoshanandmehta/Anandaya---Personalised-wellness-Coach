@@ -1,7 +1,8 @@
 import { getDb } from '../db.js';
 
 export async function requireAuth(req, res, next) {
-  const sessionId = req.cookies.sessionId;
+  const bearer = req.get('authorization')?.match(/^Bearer\s+(.+)$/i)?.[1];
+  const sessionId = req.cookies.sessionId || bearer;
   
   if (!sessionId) {
     return res.status(401).json({ error: 'Authentication required' });
