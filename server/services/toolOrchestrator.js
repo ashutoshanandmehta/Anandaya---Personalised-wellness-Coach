@@ -756,7 +756,7 @@ Use at most one gentle emoji.`;
 
   try {
     const reply = await generateText(systemInstruction, prompt, 0.35);
-    if (!reply || /temporarily unavailable/i.test(reply)) return fallback;
+    if (!reply || /temporarily unavailable|testing build|AI provider configuration|AI reply could not be generated/i.test(reply)) return fallback;
     return enforceTrustInvariant(reply.trim(), toolResult) || fallback;
   } catch {
     return fallback;

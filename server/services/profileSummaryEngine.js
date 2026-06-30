@@ -7,7 +7,7 @@
 import { generateText } from './ai.js';
 
 const MAX_SUMMARY_CHARS = 900;
-const UNAVAILABLE_PATTERN = /AI service is temporarily unavailable/i;
+const UNAVAILABLE_PATTERN = /AI service is temporarily unavailable|testing build|AI provider configuration|AI reply could not be generated/i;
 
 const SYSTEM_INSTRUCTION = `You maintain a compact wellness profile memory for Anandaya.
 

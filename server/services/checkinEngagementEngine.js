@@ -402,7 +402,7 @@ Fallback card: ${fallback.card}
 Write as if we are gently inviting the person back to update progress. Make it easy to tap, not formal.`;
     const text = await generateMainText(systemInstruction, prompt, 0.45);
     const parsed = parseCopyText(text);
-    if (parsed?.title && parsed?.body && parsed?.card && !/temporarily unavailable/i.test(text)) {
+    if (parsed?.title && parsed?.body && parsed?.card && !/temporarily unavailable|testing build|AI provider configuration|AI reply could not be generated/i.test(text)) {
       return toCopyPayload({
         ...fallback,
         title: limitText(parsed.title, 80),
