@@ -161,6 +161,28 @@ function handleSlotError(slot, error, taskType) {
   }
 }
 
+export function getUserFacingAIErrorMessage(error) {
+  const message = String(error?.message || error || '').toLowerCase();
+  const status = Number(error?.status || error?.code || 0);
+
+  if (
+    status === 429 ||
+    /rate\s*limit|too many requests|tokens?\s+per\s+minute|requests?\s+per\s+minute|\btpm\b|\brpm\b|quota|exceeded/i.test(message)
+  ) {
+    return 'This testing build has reached its current AI token/request limit for the minute. Your message was saved. Please try again in about a minute.';
+  }
+
+  if (/no healthy slots|system degraded|all attempts failed/i.test(message)) {
+    return 'This testing build is temporarily out of available AI capacity because the test provider limits were reached. Your message was saved. Please try again shortly.';
+  }
+
+  if (status === 401 || status === 403 || /invalid api key|unauthorized|forbidden|organization_restricted|permission/i.test(message)) {
+    return 'The AI provider configuration for this testing build needs attention. Your message was saved, but the assistant cannot reply until the test API access is fixed.';
+  }
+
+  return 'The AI reply could not be generated right now. Your message was saved. Please try again shortly.';
+}
+
 async function executeWithSlot(taskType, runner, estimatedTokens) {
   const maxAttempts = Math.max(3, countSlotsForTask(taskType) + 1);
   let lastError = null;
@@ -318,7 +340,7 @@ export async function generateMainText(systemInstruction, userPrompt, temperatur
       return response.choices[0].message.content;
     }, 500);
   } catch (error) {
-    return 'AI service is temporarily unavailable. Your message was saved.';
+    return getUserFacingAIErrorMessage(error);
   }
 }
 
@@ -339,7 +361,7 @@ export async function chat(systemInstruction, history, userMessage, temperature 
       return response.choices[0].message.content;
     }, 2000);
   } catch (error) {
-    return 'AI service is temporarily unavailable. Your message was saved.';
+    return getUserFacingAIErrorMessage(error);
   }
 }
 
