@@ -512,13 +512,13 @@ body {
 /* ── Auth Shell ────────────────────────────────────────────────── */
 .auth-layout {
   width: 100%;
-  max-width: 1120px;
+  max-width: 1160px;
   display: grid;
-  grid-template-columns: minmax(340px, 420px) minmax(420px, 560px);
-  align-items: center;
+  grid-template-columns: minmax(380px, 480px) minmax(340px, 440px);
+  align-items: start;
   justify-content: center;
-  gap: var(--sp-8);
-  padding: var(--sp-8) 0;
+  gap: var(--sp-12);
+  padding: var(--sp-6) 0 var(--sp-10);
   margin: auto 0;
 }
 
@@ -562,6 +562,7 @@ body {
   border-radius: var(--r-2xl);
   padding: var(--sp-8) var(--sp-8);
   grid-column: 1;
+  box-shadow: 0 24px 70px rgba(0, 0, 0, 0.34);
 }
 
 .auth-form { width: 100%; }
@@ -577,13 +578,18 @@ body {
   grid-column: 2;
   grid-row: 1 / span 2;
   width: 100%;
+  max-width: 400px;
   display: grid;
   gap: var(--sp-5);
-  align-self: center;
+  align-self: start;
+  justify-self: end;
+  margin-top: var(--sp-8);
+  transform: scale(0.94);
+  transform-origin: top right;
 }
 
 .auth-preview-phone {
-  min-height: 610px;
+  min-height: 520px;
   border-radius: 36px;
   padding: 16px;
   background: #0C1014;
