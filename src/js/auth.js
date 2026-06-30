@@ -1,3 +1,5 @@
+import { App } from '@capacitor/app';
+import { Capacitor } from '@capacitor/core';
 import { apiClient } from './apiClient.js';
 import { loadApp } from './app.js';
 
@@ -59,6 +61,71 @@ export function initAuth() {
 
   // Global auth event
   window.addEventListener('auth:unauthorized', showAuthShellFn);
+
+  setupGoogleAuthLinks();
+  setupMobileAuthCallback();
+
+
+  function setupGoogleAuthLinks() {
+    const googleUrl = new URL('https://health-coach-ai.onrender.com/api/auth/google');
+    if (Capacitor.isNativePlatform?.() && Capacitor.getPlatform() === 'android') {
+      googleUrl.searchParams.set('platform', 'android');
+    }
+
+    document.querySelectorAll('[data-google-auth-link]').forEach(link => {
+      link.href = googleUrl.toString();
+    });
+  }
+
+  function setupMobileAuthCallback() {
+    if (!Capacitor.isNativePlatform?.()) return;
+
+    const handledCodes = new Set();
+    const handleUrl = async (url) => {
+      const code = parseMobileAuthCode(url);
+      if (!code || handledCodes.has(code)) return;
+      handledCodes.add(code);
+
+      try {
+        loginSubmitBtn.disabled = true;
+        loginSubmitBtn.textContent = 'Completing sign in...';
+        const result = await apiClient.post('/api/auth/mobile/exchange', { code });
+        if (result.sessionId) {
+          apiClient.setMobileSession(result.sessionId);
+        }
+        await loadApp();
+      } catch (error) {
+        console.error('[Mobile Google Auth]', error);
+        showAuthShellFn();
+        showError(loginError, error.message || 'Google sign-in could not be completed.');
+      } finally {
+        loginSubmitBtn.disabled = false;
+        loginSubmitBtn.textContent = 'Sign in';
+      }
+    };
+
+    App.addListener('appUrlOpen', ({ url }) => {
+      handleUrl(url);
+    });
+
+    App.getLaunchUrl().then(result => {
+      if (result?.url) handleUrl(result.url);
+    }).catch(error => {
+      console.warn('[Mobile Google Auth] Could not read launch URL', error);
+    });
+  }
+
+  function parseMobileAuthCode(url) {
+    try {
+      const parsed = new URL(url);
+      if (parsed.protocol !== 'anandaya:' || parsed.hostname !== 'auth') return null;
+      const path = parsed.pathname.replace(/^\/+/, '');
+      if (path !== 'callback') return null;
+      return parsed.searchParams.get('code');
+    } catch {
+      return null;
+    }
+  }
 
   // ── Utils ──
   function showForm(formEl) {
@@ -245,6 +312,7 @@ export function initAuth() {
   // Logout
   document.getElementById('logoutBtn').addEventListener('click', async () => {
     try { await apiClient.post('/api/auth/logout'); } catch {}
+    apiClient.clearMobileSession();
     window.location.reload();
   });
 }
