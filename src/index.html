@@ -125,6 +125,9 @@
   <div id="authShell" class="full-screen-shell">
     <div class="auth-layout">
 
+      <!-- Login column: brand + card stacked tightly -->
+      <div class="auth-main">
+
       <!-- Brand block -->
       <div class="auth-brand">
         <img src="/brand/anand-icon.png" alt="Anandaya" class="auth-brand-icon">
@@ -258,13 +261,14 @@
         </form>
 
       </div><!-- /auth-card -->
+      </div><!-- /auth-main -->
 
       <!-- Animated product preview -->
       <section class="auth-preview-card" aria-label="What Anandaya can do">
         <div class="auth-preview-phone">
           <div class="auth-preview-head">
             <div class="auth-preview-brand">
-              <span>Coach preview</span>
+              <span>Preview</span>
             </div>
             <div class="auth-preview-live">
               <svg viewBox="0 0 24 24" fill="none" aria-hidden="true">
@@ -294,18 +298,21 @@
             </span>
           </div>
         </div>
+      </section>
 
-        <div class="auth-preview-copy">
+      <!-- Full-width feature band (spans Box 1 → Box 2) -->
+      <div class="auth-preview-copy">
+        <div class="auth-preview-copy-text">
           <p class="auth-preview-kicker">Personalised wellness coach</p>
           <h2>Care that turns each chat into the next useful step.</h2>
           <p>Anandaya listens to your context, shapes simple wellness actions, remembers follow-ups, and keeps safety boundaries visible.</p>
-          <div class="auth-preview-points">
-            <span>Profile-aware guidance</span>
-            <span>Check-ins and reminders</span>
-            <span>Progress continuity</span>
-          </div>
         </div>
-      </section>
+        <div class="auth-preview-points">
+          <span>Profile-aware guidance</span>
+          <span>Check-ins and reminders</span>
+          <span>Progress continuity</span>
+        </div>
+      </div>
     </div><!-- /auth-layout -->
   </div><!-- /authShell -->
 
